@@ -1,0 +1,190 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:conv="clr-namespace:QuotaFlow.Windows.App.Converters">
+
+    <conv:ProgressToWidthConverter x:Key="ProgressToWidthConverter" />
+
+    <FontFamily x:Key="Font.Default">Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI</FontFamily>
+    <FontFamily x:Key="Font.Numeric">Segoe UI Variable Display, Segoe UI, Microsoft YaHei UI</FontFamily>
+
+    <Style TargetType="{x:Type Window}">
+        <Setter Property="FontFamily" Value="{StaticResource Font.Default}" />
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+        <Setter Property="TextOptions.TextRenderingMode" Value="ClearType" />
+        <Setter Property="UseLayoutRounding" Value="True" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+    </Style>
+
+    <!-- 卡片容器：圆角、柔和边框和轻微阴影，背景保持干净。 -->
+    <Style x:Key="Style.Card" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource Brush.CardBackground}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.CardBorder}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="12" />
+        <Setter Property="Padding" Value="14,11" />
+        <Setter Property="Effect">
+            <Setter.Value>
+                <DropShadowEffect Color="#000000" Opacity="0.08" BlurRadius="12" ShadowDepth="1" Direction="270" />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 面板整体外壳：更大的圆角，用于承载整个托盘弹出面板。 -->
+    <Style x:Key="Style.PanelShell" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource Brush.PanelBackground}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.CardBorder}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="14" />
+        <Setter Property="Effect">
+            <Setter.Value>
+                <DropShadowEffect Color="#000000" Opacity="0.22" BlurRadius="28" ShadowDepth="4" Direction="270" />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="Style.TitleText" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="16" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+    </Style>
+
+    <Style x:Key="Style.SubtitleText" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}" />
+    </Style>
+
+    <Style x:Key="Style.CardTitleText" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+    </Style>
+
+    <Style x:Key="Style.WindowLabelText" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}" />
+    </Style>
+
+    <Style x:Key="Style.PercentText" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource Font.Numeric}" />
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+    </Style>
+
+    <Style x:Key="Style.ResetHintText" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.TextTertiary}" />
+    </Style>
+
+    <Style x:Key="Style.FooterText" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.TextTertiary}" />
+    </Style>
+
+    <Style x:Key="Style.BalanceAmountText" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource Font.Numeric}" />
+        <Setter Property="FontSize" Value="24" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+    </Style>
+
+    <!-- 圆形图标按钮：刷新、"..."、设置齿轮等，悬停时出现淡淡的圆形高亮。 -->
+    <Style x:Key="Style.IconButton" TargetType="Button">
+        <Setter Property="Width" Value="28" />
+        <Setter Property="Height" Value="28" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bg" CornerRadius="14" Background="Transparent">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bg" Property="Background" Value="{DynamicResource Brush.HoverOverlay}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.4" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 额度进度条：圆角、轨道柔和，前景色由绑定值（剩余区间对应的状态色）驱动。 -->
+    <Style x:Key="Style.QuotaProgressBar" TargetType="ProgressBar">
+        <Setter Property="Height" Value="6" />
+        <Setter Property="Minimum" Value="0" />
+        <Setter Property="Maximum" Value="100" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ProgressBar">
+                    <Grid ClipToBounds="True">
+                        <Border CornerRadius="3" Background="{DynamicResource Brush.Divider}" />
+                        <Border x:Name="PART_Indicator" CornerRadius="3" Background="{TemplateBinding Foreground}"
+                                HorizontalAlignment="Left">
+                            <Border.Width>
+                                <MultiBinding Converter="{StaticResource ProgressToWidthConverter}">
+                                    <Binding RelativeSource="{RelativeSource TemplatedParent}" Path="Value" />
+                                    <Binding RelativeSource="{RelativeSource TemplatedParent}" Path="ActualWidth" />
+                                </MultiBinding>
+                            </Border.Width>
+                        </Border>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="Button" x:Key="Style.PrimaryButton">
+        <Setter Property="Background" Value="{DynamicResource Brush.AccentDeepSeek}" />
+        <Setter Property="Foreground" Value="White" />
+        <Setter Property="Padding" Value="14,7" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border CornerRadius="8" Background="{TemplateBinding Background}" Opacity="{TemplateBinding Opacity}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Opacity" Value="0.88" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter Property="Opacity" Value="0.75" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="Button" x:Key="Style.SecondaryButton">
+        <Setter Property="Background" Value="{DynamicResource Brush.Divider}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+        <Setter Property="Padding" Value="14,7" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border CornerRadius="8" Background="{TemplateBinding Background}" Opacity="{TemplateBinding Opacity}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Opacity" Value="0.85" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+</ResourceDictionary>

@@ -1,0 +1,29 @@
+# 构建产物
+bin/
+obj/
+publish/
+*.dll
+*.exe
+*.pdb
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.user
+*.suo
+
+# 测试
+TestResults/
+
+# 发布/凭据相关（本项目本来就不该往仓库里写这些，这里是双重保险，对应产品文档 §7.7）
+# 注意：不要用 *credentials*/*secret* 这类宽泛通配符——项目里
+# ClaudeCredentialReader.cs / SecureCredentialStore.cs 等本来就是合法源码文件名，会被误伤。
+*.local.*
+APIKeys.txt
+*.log
+.credentials.json
+seed_keys.txt
+
+# OS
+.DS_Store
+Thumbs.db

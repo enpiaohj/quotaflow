@@ -1,0 +1,246 @@
+<Window x:Class="QuotaFlow.Windows.App.Views.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:conv="clr-namespace:QuotaFlow.Windows.App.Converters"
+        Title="QuotaFlow 设置" Width="440" Height="720" MinWidth="400" MinHeight="480"
+        Icon="Assets/app.ico"
+        Background="{DynamicResource Brush.Background}"
+        WindowStartupLocation="CenterScreen" ResizeMode="CanResize">
+
+    <Window.Resources>
+        <conv:EnumEqualsConverter x:Key="EnumEquals" />
+        <Style x:Key="SectionTitle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+        </Style>
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="StatusLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.TextTertiary}" />
+            <Setter Property="Margin" Value="0,6,0,0" />
+        </Style>
+        <Style TargetType="RadioButton">
+            <Setter Property="Margin" Value="0,0,16,0" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+        </Style>
+        <Style TargetType="PasswordBox">
+            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Brush.CardBorder}" />
+        </Style>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+        <Style x:Key="EyeButton" TargetType="Button">
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" CornerRadius="14" Background="Transparent">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="{DynamicResource Brush.Divider}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="RevealedKeyBox" TargetType="TextBox">
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="FontFamily" Value="Consolas" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+        </Style>
+    </Window.Resources>
+
+    <ScrollViewer Padding="20" VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+
+            <!-- 刷新 -->
+            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
+                <StackPanel>
+                    <TextBlock Text="刷新" Style="{StaticResource SectionTitle}" />
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="自动刷新间隔" Style="{StaticResource FieldLabel}" />
+                        <ComboBox Grid.Column="1" Width="120" ItemsSource="{Binding AllowedRefreshIntervals}"
+                                  SelectedItem="{Binding AutoRefreshIntervalMinutes}" />
+                    </Grid>
+                    <CheckBox Content="启动时立即刷新" IsChecked="{Binding RefreshOnStartup}" />
+                </StackPanel>
+            </Border>
+
+            <!-- 启动 -->
+            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
+                <StackPanel>
+                    <TextBlock Text="启动" Style="{StaticResource SectionTitle}" />
+                    <CheckBox Content="开机自动启动（默认关闭）" IsChecked="{Binding StartWithWindows}" />
+                </StackPanel>
+            </Border>
+
+            <!-- 外观 -->
+            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
+                <StackPanel>
+                    <TextBlock Text="外观" Style="{StaticResource SectionTitle}" />
+                    <StackPanel Orientation="Horizontal">
+                        <RadioButton GroupName="Theme" Content="跟随系统"
+                                     IsChecked="{Binding Theme, Converter={StaticResource EnumEquals}, ConverterParameter=System}" />
+                        <RadioButton GroupName="Theme" Content="浅色"
+                                     IsChecked="{Binding Theme, Converter={StaticResource EnumEquals}, ConverterParameter=Light}" />
+                        <RadioButton GroupName="Theme" Content="深色"
+                                     IsChecked="{Binding Theme, Converter={StaticResource EnumEquals}, ConverterParameter=Dark}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Claude / Codex 登录检测 -->
+            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Claude / Codex 本机登录" Style="{StaticResource SectionTitle}" />
+                        <Button Grid.Column="1" Content="重新检测" Style="{StaticResource Style.SecondaryButton}"
+                                Command="{Binding RefreshLoginStatusCommand}" />
+                    </Grid>
+                    <TextBlock Text="{Binding ClaudeLoginStatusText, StringFormat=Claude：{0}}" TextWrapping="Wrap"
+                               FontSize="12" Foreground="{DynamicResource Brush.TextPrimary}" Margin="0,4,0,6" />
+                    <TextBlock Text="{Binding CodexLoginStatusText, StringFormat=Codex：{0}}" TextWrapping="Wrap"
+                               FontSize="12" Foreground="{DynamicResource Brush.TextPrimary}" />
+                    <TextBlock Text="不提供密码输入框——请直接使用对应 CLI 完成登录。" Style="{StaticResource StatusLabel}" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <!-- MiniMax -->
+            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="MiniMax" Style="{StaticResource SectionTitle}" />
+                        <TextBlock Grid.Column="1" Text="{Binding MiniMaxConfiguredText}" FontSize="12"
+                                   Foreground="{DynamicResource Brush.TextSecondary}" />
+                    </Grid>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                        <RadioButton GroupName="MiniMaxRegion" Content="国内站"
+                                     IsChecked="{Binding MiniMaxRegion, Converter={StaticResource EnumEquals}, ConverterParameter=China}" />
+                        <RadioButton GroupName="MiniMaxRegion" Content="国际站"
+                                     IsChecked="{Binding MiniMaxRegion, Converter={StaticResource EnumEquals}, ConverterParameter=International}" />
+                    </StackPanel>
+
+                    <!-- 已配置时：眼睛按钮 + 明文/掩码展示，点击眼睛需先通过 Windows Hello 验证 -->
+                    <Border Background="{DynamicResource Brush.Background}" CornerRadius="6" Padding="8,4" Margin="0,0,0,8"
+                            Visibility="{Binding IsMiniMaxConfigured, Converter={StaticResource BoolToVis}}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Button Grid.Column="0" Style="{StaticResource EyeButton}"
+                                    Content="&#128065;" Command="{Binding ToggleRevealMiniMaxKeyCommand}"
+                                    ToolTip="验证身份后查看明文 Key" />
+                            <TextBox Grid.Column="1" Style="{StaticResource RevealedKeyBox}"
+                                     Text="{Binding MiniMaxKeyDisplayText, Mode=OneWay}" />
+                        </Grid>
+                    </Border>
+
+                    <PasswordBox x:Name="MiniMaxKeyBox" />
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <Button Content="保存" Style="{StaticResource Style.PrimaryButton}" Margin="0,0,8,0"
+                                Click="OnSaveMiniMaxKeyClick" />
+                        <Button Content="清除" Style="{StaticResource Style.SecondaryButton}"
+                                Command="{Binding ClearMiniMaxKeyCommand}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- DeepSeek -->
+            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="DeepSeek" Style="{StaticResource SectionTitle}" />
+                        <TextBlock Grid.Column="1" Text="{Binding DeepSeekConfiguredText}" FontSize="12"
+                                   Foreground="{DynamicResource Brush.TextSecondary}" />
+                    </Grid>
+
+                    <Border Background="{DynamicResource Brush.Background}" CornerRadius="6" Padding="8,4" Margin="0,0,0,8"
+                            Visibility="{Binding IsDeepSeekConfigured, Converter={StaticResource BoolToVis}}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Button Grid.Column="0" Style="{StaticResource EyeButton}"
+                                    Content="&#128065;" Command="{Binding ToggleRevealDeepSeekKeyCommand}"
+                                    ToolTip="验证身份后查看明文 Key" />
+                            <TextBox Grid.Column="1" Style="{StaticResource RevealedKeyBox}"
+                                     Text="{Binding DeepSeekKeyDisplayText, Mode=OneWay}" />
+                        </Grid>
+                    </Border>
+
+                    <PasswordBox x:Name="DeepSeekKeyBox" />
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <Button Content="保存" Style="{StaticResource Style.PrimaryButton}" Margin="0,0,8,0"
+                                Click="OnSaveDeepSeekKeyClick" />
+                        <Button Content="清除" Style="{StaticResource Style.SecondaryButton}"
+                                Command="{Binding ClearDeepSeekKeyCommand}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- 数据与隐私 -->
+            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
+                <StackPanel>
+                    <TextBlock Text="数据与隐私" Style="{StaticResource SectionTitle}" />
+                    <Button Content="清除本地缓存" Style="{StaticResource Style.SecondaryButton}" HorizontalAlignment="Left"
+                            Command="{Binding ClearCacheCommand}" />
+                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
+                               Text="密钥保存在 Windows 凭据管理器中，不会写入普通配置文件、日志或缓存。Claude/Codex 的登录状态直接读取对应 CLI 本机凭据文件，QuotaFlow 不存储、也不上传这些凭据。" />
+                </StackPanel>
+            </Border>
+
+            <!-- 关于 -->
+            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
+                <StackPanel>
+                    <TextBlock Text="关于" Style="{StaticResource SectionTitle}" />
+                    <TextBlock FontSize="12" Foreground="{DynamicResource Brush.TextPrimary}"
+                               Text="QuotaFlow for Windows · v1.0.0" Margin="0,0,0,4" />
+                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
+                               Text="Claude/Codex/MiniMax 额度查询的接口路径参考了 cc-switch（MIT License，https://github.com/farion1231/cc-switch）并结合本机实测确认。详见项目 README 的“已知风险与致谢”一节。" />
+                </StackPanel>
+            </Border>
+
+            <TextBlock Text="{Binding StatusMessage}" HorizontalAlignment="Center" Margin="0,4,0,10"
+                       FontSize="12" Foreground="{DynamicResource Brush.AccentDeepSeek}" />
+
+            <Button Content="保存设置" Style="{StaticResource Style.PrimaryButton}" HorizontalAlignment="Stretch"
+                    Command="{Binding SaveGeneralSettingsCommand}" Margin="0,0,0,20" />
+        </StackPanel>
+    </ScrollViewer>
+</Window>

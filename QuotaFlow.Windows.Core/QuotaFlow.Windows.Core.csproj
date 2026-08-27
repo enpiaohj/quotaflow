@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- 本项目专供 QuotaFlow for Windows 使用，Credential Manager / DPAPI 调用均为 Windows 专属 API -->
+    <SupportedOSPlatformVersion>7.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 让测试项目能直接调用解析/凭据读取逻辑里的 internal 成员，无需为了测试把它们全部公开。 -->
+    <InternalsVisibleTo Include="QuotaFlow.Windows.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Drawing.Common" Version="10.0.11" />
+  </ItemGroup>
+
+</Project>

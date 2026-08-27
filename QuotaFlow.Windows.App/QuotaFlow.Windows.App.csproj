@@ -1,0 +1,31 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\QuotaFlow.Windows.Core\QuotaFlow.Windows.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- 升级到带 Windows SDK 投影的 TFM，仅为了调用 Windows.Security.Credentials.UI（Windows Hello）。 -->
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <!-- 只为了 NotifyIcon（系统托盘图标），不引入 WinForms 的 UI 表面。 -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <AssemblyName>QuotaFlow</AssemblyName>
+    <RootNamespace>QuotaFlow.Windows.App</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+    <Product>QuotaFlow</Product>
+    <Company>QuotaFlow</Company>
+  </PropertyGroup>
+
+</Project>

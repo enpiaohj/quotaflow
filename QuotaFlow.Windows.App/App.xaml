@@ -1,0 +1,14 @@
+<Application x:Class="QuotaFlow.Windows.App.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             ShutdownMode="OnExplicitShutdown">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- 主题色板放最前面，ThemeManager 在运行时替换第 0 项即可实现浅色/深色切换。 -->
+                <ResourceDictionary Source="Themes/Colors.Light.xaml" />
+                <ResourceDictionary Source="Themes/Styles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
