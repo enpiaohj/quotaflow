@@ -60,6 +60,18 @@ public class CodexQuotaProviderTests
     }
 
     [Fact]
+    public void ParseResponse_ZeroRemaining_ReturnsExhausted()
+    {
+        var json = """
+            { "rate_limit": { "primary_window": { "used_percent": 100, "limit_window_seconds": 18000, "reset_at": 1798000000 } } }
+            """;
+
+        var snapshot = CreateProvider().ParseResponse(json);
+
+        Assert.Equal(ProviderState.Exhausted, snapshot.State);
+    }
+
+    [Fact]
     public void ParseResponse_NoRateLimitField_ReturnsProviderError()
     {
         var snapshot = CreateProvider().ParseResponse("{}");

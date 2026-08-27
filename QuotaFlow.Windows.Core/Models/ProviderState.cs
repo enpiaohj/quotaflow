@@ -34,4 +34,7 @@ public enum ProviderState
 
     /// <summary>展示的是缓存数据，且缓存已超过合理新鲜度窗口。</summary>
     Stale,
+
+    /// <summary>至少一个额度窗口已用尽（剩余 = 0%），与"紧张（告急）"区分：紧张还可继续使用，已用尽不可。</summary>
+    Exhausted,
 }

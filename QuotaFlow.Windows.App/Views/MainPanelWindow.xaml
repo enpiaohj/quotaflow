@@ -42,7 +42,7 @@
         </Style>
 
         <DataTemplate x:Key="ProviderCardTemplate" DataType="{x:Type vm:ProviderCardViewModel}">
-            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,8">
+            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,8" Visibility="{Binding Visibility}">
                 <StackPanel>
                     <!-- 卡片头部：状态点 + 名称 + 状态文案 + 展开按钮 -->
                     <Grid>
@@ -165,6 +165,7 @@
 
                 <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
                     <Button Style="{StaticResource Style.IconButton}" Content="&#9881;" FontSize="14"
+                            AutomationProperties.AutomationId="SettingsButton"
                             Click="OnOpenSettingsClick" ToolTip="设置" Margin="0,0,4,0" />
                     <Button DataContext="{Binding}" Content="&#8635;" FontSize="15"
                             Command="{Binding RefreshAllCommand}" ToolTip="刷新全部">
@@ -204,9 +205,25 @@
                            FontSize="11" Foreground="{DynamicResource Brush.TextTertiary}" Margin="0,3,0,0" />
             </Grid>
 
-            <!-- 四张平台卡片，固定顺序 Claude/Codex/MiniMax/DeepSeek，尽量不滚动即可看完 -->
+            <!-- 平台卡片：顺序按设置（PlatformOrder），未配置的平台自动隐藏；全部未配置时显示引导文案 -->
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                <ItemsControl ItemsSource="{Binding Cards}" ItemTemplate="{StaticResource ProviderCardTemplate}" />
+                <StackPanel>
+                    <ItemsControl ItemsSource="{Binding Cards}" ItemTemplate="{StaticResource ProviderCardTemplate}" />
+
+                    <!-- 空态：所有平台都还没配置凭据/登录，友好引导而不是假装有数据 -->
+                    <Border Style="{StaticResource Style.Card}" Visibility="{Binding EmptyStateVisibility}" Margin="0,0,0,8">
+                        <StackPanel>
+                            <TextBlock Text="还没有可显示的额度" Style="{StaticResource Style.CardTitleText}"
+                                       HorizontalAlignment="Center" />
+                            <TextBlock Text="尚未配置任何平台的凭据。"
+                                       TextWrapping="Wrap" HorizontalAlignment="Center" Margin="0,6,0,0"
+                                       FontSize="12" Foreground="{DynamicResource Brush.TextPrimary}" />
+                            <TextBlock Text="点击右上角 ⚙ 打开设置：Claude/Codex 直接用对应 CLI 登录，MiniMax/DeepSeek 在各自分组填写 API Key。配置完成后，额度会自动显示在面板上。"
+                                       TextWrapping="Wrap" HorizontalAlignment="Center" Margin="0,4,0,0"
+                                       FontSize="12" Foreground="{DynamicResource Brush.TextSecondary}" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
             </ScrollViewer>
         </DockPanel>
     </Border>

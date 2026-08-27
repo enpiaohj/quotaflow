@@ -23,6 +23,12 @@ public sealed class MiniMaxQuotaProvider : IQuotaProvider
     /// <summary>MiniMax 国际站点域名。</summary>
     public const string DomainIntl = "api.minimax.io";
 
+    /// <summary>MiniMax 国内站用量接口的内置默认地址；用户可在设置页覆盖。</summary>
+    public const string DefaultUsageUrlCn = $"https://{DomainCn}/v1/api/openplatform/coding_plan/remains";
+
+    /// <summary>MiniMax 国际站用量接口的内置默认地址；用户可在设置页覆盖。</summary>
+    public const string DefaultUsageUrlIntl = $"https://{DomainIntl}/v1/api/openplatform/coding_plan/remains";
+
     private readonly HttpClient _httpClient;
     private readonly Func<string?> _apiKeyProvider;
     private readonly string _dataSourceUrl;
@@ -38,7 +44,7 @@ public sealed class MiniMaxQuotaProvider : IQuotaProvider
         _httpClient = httpClient;
         _apiKeyProvider = apiKeyProvider;
         _dataSourceUrl = string.IsNullOrWhiteSpace(endpointOverride)
-            ? $"https://{domain}/v1/api/openplatform/coding_plan/remains"
+            ? domain == DomainIntl ? DefaultUsageUrlIntl : DefaultUsageUrlCn
             : endpointOverride.Trim();
     }
 
@@ -190,6 +196,7 @@ public sealed class MiniMaxQuotaProvider : IQuotaProvider
             var worst = windows.Min(w => w.RemainingPercent);
             var state = worst switch
             {
+                <= 0 => ProviderState.Exhausted,
                 < 10 => ProviderState.Critical,
                 < 30 => ProviderState.Low,
                 _ => ProviderState.Available,

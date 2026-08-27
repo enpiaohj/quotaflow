@@ -21,7 +21,8 @@ namespace QuotaFlow.Windows.Core.Providers;
 /// </summary>
 public sealed class ClaudeQuotaProvider : IQuotaProvider
 {
-    private const string DefaultUsageUrl = "https://api.anthropic.com/api/oauth/usage";
+    /// <summary>Claude 用量接口的内置默认地址；用户可在设置页覆盖。</summary>
+    public const string DefaultUsageUrl = "https://api.anthropic.com/api/oauth/usage";
     private readonly string _dataSourceUrl;
     private static readonly string[] KnownTierOrder =
         ["five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet", "seven_day_omelette"];
@@ -190,6 +191,7 @@ public sealed class ClaudeQuotaProvider : IQuotaProvider
             var worst = windows.Min(w => w.RemainingPercent);
             var state = worst switch
             {
+                <= 0 => ProviderState.Exhausted,
                 < 10 => ProviderState.Critical,
                 < 30 => ProviderState.Low,
                 _ => ProviderState.Available,

@@ -75,5 +75,11 @@ public sealed class AppSettings
     /// <summary>覆盖 DeepSeek 余额接口地址；空/未填时使用内置默认地址。</summary>
     public string? DeepSeekEndpointOverride { get; set; }
 
+    /// <summary>
+    /// 面板平台的展示顺序（ProviderId 列表，从上到下）。空/未填时使用内置默认顺序
+    /// （Claude → Codex → MiniMax → DeepSeek）；配置里未出现的平台按默认顺序排在末尾。
+    /// </summary>
+    public string[]? PlatformOrder { get; set; }
+
     public static readonly int[] AllowedRefreshIntervals = [5, 10, 15, 30];
 }

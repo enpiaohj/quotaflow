@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using QuotaFlow.Windows.Core.Models;
@@ -17,7 +18,9 @@ public sealed partial class ProviderCardViewModel : ObservableObject
     public string ProviderId { get; }
 
     [ObservableProperty] private string _displayName;
-    [ObservableProperty] private ProviderState _state = ProviderState.Loading;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Visibility))]
+    private ProviderState _state = ProviderState.Loading;
     [ObservableProperty] private string _stateText = "加载中";
     [ObservableProperty] private string _statusKind = "Unknown";
     [ObservableProperty] private string? _userGuidance;
@@ -33,6 +36,12 @@ public sealed partial class ProviderCardViewModel : ObservableObject
     public ObservableCollection<QuotaWindowViewModel> Windows { get; } = [];
 
     public string? DataSource => _lastSnapshot?.DataSource;
+
+    /// <summary>
+    /// 未配置（NotConfigured）的平台在面板上隐藏——没有数据可展示就不占空间，也避免误读成"0%/0.00"。
+    /// 其它状态（网络异常、需要重新登录等）仍然显示，让用户知道该平台出问题了。
+    /// </summary>
+    public Visibility Visibility => State == ProviderState.NotConfigured ? Visibility.Collapsed : Visibility.Visible;
 
     /// <summary>供 MainPanelViewModel 落地缓存使用；ProviderSnapshot 本身不含任何密钥。</summary>
     public ProviderSnapshot? CurrentSnapshot => _lastSnapshot;
@@ -147,6 +156,7 @@ public sealed partial class ProviderCardViewModel : ObservableObject
         ProviderState.Available => "正常",
         ProviderState.Low => "偏低",
         ProviderState.Critical => "紧张",
+        ProviderState.Exhausted => "已用尽",
         ProviderState.NotConfigured => "未配置",
         ProviderState.AuthenticationExpired => "需要重新登录",
         ProviderState.NetworkError => "网络异常",
@@ -161,6 +171,7 @@ public sealed partial class ProviderCardViewModel : ObservableObject
         ProviderState.Available => "Good",
         ProviderState.Low => "Warn",
         ProviderState.Critical => "Bad",
+        ProviderState.Exhausted => "Bad",
         ProviderState.RateLimited => "Warn",
         ProviderState.AuthenticationExpired => "Bad",
         ProviderState.ProviderError => "Bad",

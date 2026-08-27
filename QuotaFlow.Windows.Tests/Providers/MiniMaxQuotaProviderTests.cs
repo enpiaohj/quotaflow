@@ -66,6 +66,23 @@ public class MiniMaxQuotaProviderTests
     }
 
     [Fact]
+    public void ParseResponse_ZeroRemaining_ReturnsExhausted()
+    {
+        var json = """
+            {
+              "base_resp": { "status_code": 0 },
+              "model_remains": [
+                { "model_name": "general", "current_interval_remaining_percent": 0, "current_weekly_status": 3 }
+              ]
+            }
+            """;
+
+        var snapshot = CreateProvider().ParseResponse(json);
+
+        Assert.Equal(ProviderState.Exhausted, snapshot.State);
+    }
+
+    [Fact]
     public void ParseResponse_SkipsVideoModel_OnlyUsesGeneral()
     {
         var json = """

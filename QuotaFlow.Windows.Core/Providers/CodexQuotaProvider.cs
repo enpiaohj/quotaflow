@@ -17,7 +17,8 @@ namespace QuotaFlow.Windows.Core.Providers;
 /// </summary>
 public sealed class CodexQuotaProvider : IQuotaProvider
 {
-    private const string DefaultUsageUrl = "https://chatgpt.com/backend-api/wham/usage";
+    /// <summary>Codex 用量接口的内置默认地址；用户可在设置页覆盖。</summary>
+    public const string DefaultUsageUrl = "https://chatgpt.com/backend-api/wham/usage";
     private readonly string _dataSourceUrl;
 
     private readonly HttpClient _httpClient;
@@ -160,6 +161,7 @@ public sealed class CodexQuotaProvider : IQuotaProvider
             var worst = windows.Min(w => w.RemainingPercent);
             var state = worst switch
             {
+                <= 0 => ProviderState.Exhausted,
                 < 10 => ProviderState.Critical,
                 < 30 => ProviderState.Low,
                 _ => ProviderState.Available,

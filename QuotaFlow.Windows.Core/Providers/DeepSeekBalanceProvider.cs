@@ -14,7 +14,8 @@ namespace QuotaFlow.Windows.Core.Providers;
 /// </summary>
 public sealed class DeepSeekBalanceProvider : IQuotaProvider
 {
-    private const string DefaultUsageUrl = "https://api.deepseek.com/user/balance";
+    /// <summary>DeepSeek 余额接口的内置默认地址；用户可在设置页覆盖。</summary>
+    public const string DefaultUsageUrl = "https://api.deepseek.com/user/balance";
     private readonly string _dataSourceUrl;
 
     private readonly HttpClient _httpClient;

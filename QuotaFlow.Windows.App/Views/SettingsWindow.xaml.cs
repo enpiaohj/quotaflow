@@ -5,12 +5,11 @@ using QuotaFlow.Windows.App.ViewModels;
 namespace QuotaFlow.Windows.App.Views;
 
 /// <summary>
-/// 设置窗口代码后置做两件事：
-/// 1. 把 PasswordBox.Password 桥接到 ViewModel——WPF 出于安全考虑不允许直接
-///    {Binding} PasswordBox.Password，这是官方推荐的例外处理方式；
-/// 2. 用代码设置标题栏图标，而不是 XAML 里的 Icon="..."——实测在动态 new 出来的窗口
-///    （不是 StartupUri 指定的主窗口）上，Icon 的 XAML 类型转换器会在 InitializeComponent()
-///    阶段抛 XamlParseException，把整个进程带崩；换成 BitmapImage + pack URI 就没问题。
+/// 设置窗口代码后置只负责用代码设置标题栏图标，而不是 XAML 里的 Icon="..."——
+/// 实测在动态 new 出来的窗口（不是 StartupUri 指定的主窗口）上，Icon 的 XAML
+/// 类型转换器会在 InitializeComponent() 阶段抛 XamlParseException，把整个进程带崩；
+/// 换成 BitmapImage + pack URI 就没问题。
+/// API Key 的掩码/明文/编辑都通过绑定 ViewModel 的单行输入框完成，无需后置桥接。
 /// </summary>
 public partial class SettingsWindow : Window
 {
@@ -37,18 +36,4 @@ public partial class SettingsWindow : Window
     }
 
     private SettingsViewModel ViewModel => (SettingsViewModel)DataContext;
-
-    private void OnSaveMiniMaxKeyClick(object sender, RoutedEventArgs e)
-    {
-        ViewModel.MiniMaxApiKeyInput = MiniMaxKeyBox.Password;
-        ViewModel.SaveMiniMaxKeyCommand.Execute(null);
-        MiniMaxKeyBox.Clear();
-    }
-
-    private void OnSaveDeepSeekKeyClick(object sender, RoutedEventArgs e)
-    {
-        ViewModel.DeepSeekApiKeyInput = DeepSeekKeyBox.Password;
-        ViewModel.SaveDeepSeekKeyCommand.Execute(null);
-        DeepSeekKeyBox.Clear();
-    }
 }

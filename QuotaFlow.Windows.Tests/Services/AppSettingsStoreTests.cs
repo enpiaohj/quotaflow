@@ -61,6 +61,7 @@ public sealed class AppSettingsStoreTests : IDisposable
             CodexEndpointOverride = "https://codex.example/usage",
             MiniMaxEndpointOverride = "https://minimax.example/usage",
             DeepSeekEndpointOverride = "https://deepseek.example/balance",
+            PlatformOrder = ["deepseek", "claude", "minimax", "codex"],
         };
 
         _store.Save(original);
@@ -76,6 +77,7 @@ public sealed class AppSettingsStoreTests : IDisposable
         Assert.Equal(original.CodexEndpointOverride, loaded.CodexEndpointOverride);
         Assert.Equal(original.MiniMaxEndpointOverride, loaded.MiniMaxEndpointOverride);
         Assert.Equal(original.DeepSeekEndpointOverride, loaded.DeepSeekEndpointOverride);
+        Assert.Equal(["deepseek", "claude", "minimax", "codex"], loaded.PlatformOrder);
     }
 
     [Fact]

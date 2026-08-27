@@ -142,10 +142,17 @@ public partial class App : Application
         {
             _themeManager.Apply(newSettings.Theme);
             _panelViewModel?.UpdateSettings(newSettings);
+            // 保存后立即刷新：改顺序、清除/新增 Key、开关键等立即反映到面板，不用等下一个自动刷新周期。
+            _ = _panelViewModel?.RefreshAllAsync();
         };
 
+        settingsViewModel.StartClockPreviewTimer();
         _settingsWindow = new SettingsWindow(settingsViewModel);
-        _settingsWindow.Closed += (_, _) => _settingsWindow = null;
+        _settingsWindow.Closed += (_, _) =>
+        {
+            settingsViewModel.StopClockPreviewTimer();
+            _settingsWindow = null;
+        };
         _settingsWindow.Show();
         _settingsWindow.Activate();
     }

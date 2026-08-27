@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Windows;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -8,8 +9,8 @@ using QuotaFlow.Windows.Core.Services;
 namespace QuotaFlow.Windows.App.ViewModels;
 
 /// <summary>
-/// 托盘面板的顶层 ViewModel：持有四张平台卡片（固定顺序 Claude/Codex/MiniMax/DeepSeek），
-/// 负责启动时"先展示缓存、再后台刷新"，以及自动刷新的节奏控制。
+/// 托盘面板的顶层 ViewModel：持有平台卡片（顺序由设置 PlatformOrder 决定，默认 Claude/Codex/MiniMax/DeepSeek；
+/// 未配置的平台自动隐藏），负责启动时"先展示缓存、再后台刷新"，以及自动刷新的节奏控制。
 /// 具体的 HTTP/凭据判断都在 Core.Providers 里，这里只做编排。
 /// </summary>
 public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
@@ -26,6 +27,9 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _isRefreshingAll;
     [ObservableProperty] private string _headerLastUpdatedText = string.Empty;
     [ObservableProperty] private string _clockText = string.Empty;
+
+    /// <summary>全部平台均未配置（面板没有任何可显示的卡片）时的引导文案可见性。</summary>
+    [ObservableProperty] private Visibility _emptyStateVisibility = Visibility.Collapsed;
 
     public IAsyncRelayCommand RefreshAllCommand { get; }
     public IRelayCommand OpenSettingsCommand { get; }
@@ -50,11 +54,13 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
         _cache = cache;
         _settings = initialSettings;
 
-        // 固定展示顺序：Claude → Codex → MiniMax → DeepSeek（文档 §5.4）。
+        // 初始顺序：Claude → Codex → MiniMax → DeepSeek（文档 §5.4），随后按设置里的 PlatformOrder 重排。
         foreach (var id in _coordinator.ProviderIds)
         {
             Cards.Add(new ProviderCardViewModel(id, DisplayNameFor(id), () => RefreshOneAsync(id)));
         }
+
+        ApplyPlatformOrder(_settings.PlatformOrder);
 
         RefreshAllCommand = new AsyncRelayCommand(RefreshAllAsync);
         OpenSettingsCommand = new RelayCommand(() => SettingsRequested?.Invoke(this, EventArgs.Empty));
@@ -119,11 +125,41 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>设置页保存后调用：自动刷新间隔立即生效，不需要重启应用。</summary>
+    /// <summary>设置页保存后调用：自动刷新间隔、平台顺序立即生效，不需要重启应用。</summary>
     public void UpdateSettings(AppSettings settings)
     {
         _settings = settings;
         ApplyAutoRefreshInterval(settings.AutoRefreshIntervalMinutes);
+        ApplyPlatformOrder(settings.PlatformOrder);
+    }
+
+    /// <summary>
+    /// 按设置中的 PlatformOrder 重排卡片（从上到下）。配置里出现的平台按其指定顺序，
+    /// 未出现的保持自然顺序排在末尾；null/空表示全部用自然顺序。只重排不改状态，
+    /// 卡片实例及其缓存/刷新状态都不受影响。
+    /// </summary>
+    private void ApplyPlatformOrder(string[]? order)
+    {
+        if (order is null || order.Length == 0)
+        {
+            return;
+        }
+
+        var ordered = Cards.ToList()
+            .OrderBy(c => RankOf(c.ProviderId, order)) // OrderBy 稳定：未知 id 保持自然顺序
+            .ToList();
+
+        Cards.Clear();
+        foreach (var card in ordered)
+        {
+            Cards.Add(card);
+        }
+
+        static int RankOf(string providerId, string[] order)
+        {
+            var idx = Array.IndexOf(order, providerId);
+            return idx < 0 ? int.MaxValue : idx;
+        }
     }
 
     private void ApplyAutoRefreshInterval(int minutes)
@@ -159,6 +195,11 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
         HeaderLastUpdatedText = _lastRefreshAllAt is { } refreshedAt
             ? FormatRelative(now - refreshedAt)
             : string.Empty;
+
+        // 全部未配置时显示友好引导文案（面板为空的状态，而非假装有数据）。
+        EmptyStateVisibility = Cards.Any(c => c.State != ProviderState.NotConfigured)
+            ? Visibility.Collapsed
+            : Visibility.Visible;
 
         // 面板顶部实时时钟：每秒刷新，格式由设置"日期显示格式"决定（UpdateSettings 后即时生效）。
         ClockText = ClockFormatter.Format(DateTimeOffset.Now, _settings.ClockDisplayFormat);

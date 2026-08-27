@@ -134,8 +134,9 @@ public class ClaudeQuotaProviderTests
     }
 
     [Theory]
-    [InlineData(95, ProviderState.Critical)]  // utilization 95 -> 剩余 5%
-    [InlineData(15, ProviderState.Available)] // utilization 15 -> 剩余 85%
+    [InlineData(100, ProviderState.Exhausted)] // utilization 100 -> 剩余 0%，已用尽
+    [InlineData(95, ProviderState.Critical)]   // utilization 95 -> 剩余 5%
+    [InlineData(15, ProviderState.Available)]  // utilization 15 -> 剩余 85%
     public void ParseResponse_StateReflectsWorstRemainingWindow(double utilization, ProviderState expected)
     {
         var json = $$"""
