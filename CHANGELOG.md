@@ -2,6 +2,25 @@
 
 版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)（`主版本.次版本.修订号`），每次发布打对应的 Git tag（`vX.Y.Z`）。
 
+## [1.0.2] - 2026-08-27
+
+### 修复
+
+- **严重**：点击"眼睛"查看明文 Key 时，Windows Hello 未配置的机器上不弹任何验证框。
+  根因有两层：① 当 Hello 报告"可用"但实际未给当前用户配置 PIN/生物识别时，
+  `RequestVerificationAsync` 不弹 UI 直接返回，旧代码就此判定失败、从不降级到密码验证——
+  现在统一降级到系统密码验证；② 密码验证用的 `CredUIPromptForWindowsCredentials` 因传了
+  `hwndParent` 和 `CREDUIWIN_EXCLUDE_CERTIFICATES` 标志，在本机直接返回
+  `ERROR_INVALID_PARAMETER` 导致弹窗根本不出现——现已移除这两处，凭据框正常居中弹出。
+- 密码验证结果区分"已取消 / 验证失败"，不再把用户主动取消也算作失败。
+
+### 优化
+
+- 服务端新出现的未识别额度窗口（如 `nimbus_quill`）默认不再显示成英文名占位。
+  新增设置项"显示未识别的新额度窗口"（默认关闭），开启后以中文标签（如"其他额度（nimbus_quill）"）
+  展示，便于排查。
+- 识别 Claude 新增的 `seven_day_omelette`（Claude Design 设计额度）窗口，中文显示为"7 天 (Design)"。
+
 ## [1.0.1] - 2026-08-27
 
 ### 修复

@@ -14,13 +14,16 @@ namespace QuotaFlow.Windows.Core.Providers;
 /// 接口 GET https://api.anthropic.com/api/oauth/usage 是非公开接口，路径和字段结构
 /// 参考自 cc-switch（MIT License, https://github.com/farion1231/cc-switch，
 /// src-tauri/src/services/subscription.rs）并结合本机实测响应确认，未来可能随官方调整而变化，
-/// 因此对未知字段采用宽松解析：已知窗口优先按名字取，额外出现的窗口原样透传展示，
-/// 缺失的窗口直接跳过而不是伪造成 0%。
+/// 因此对未知字段采用宽松解析：已知窗口优先按名字取，缺失的窗口直接跳过而不是伪造成 0%。
+/// 服务端新出现的未知窗口（例如 nimbus_quill）默认隐藏——这类新窗口对多数用户是 0% 使用、
+/// 无重置时间的空额度，原样透传成英文名展示既看不懂也占地方；只有 <see cref="_includeUnknownWindows"/>
+/// 返回 true（用户在设置里显式开启）时才展示，并统一换成中文标签、保留原始 id 便于排查。
 /// </summary>
 public sealed class ClaudeQuotaProvider : IQuotaProvider
 {
     private const string DataSourceUrl = "https://api.anthropic.com/api/oauth/usage";
-    private static readonly string[] KnownTierOrder = ["five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet"];
+    private static readonly string[] KnownTierOrder =
+        ["five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet", "seven_day_omelette"];
 
     private static readonly IReadOnlyDictionary<string, string> TierDisplayNames = new Dictionary<string, string>
     {
@@ -28,17 +31,21 @@ public sealed class ClaudeQuotaProvider : IQuotaProvider
         ["seven_day"] = "7 天",
         ["seven_day_opus"] = "7 天 (Opus)",
         ["seven_day_sonnet"] = "7 天 (Sonnet)",
+        ["seven_day_omelette"] = "7 天 (Design)", // Claude Design 的设计额度
     };
 
     private readonly HttpClient _httpClient;
     private readonly ClaudeCredentialReader _credentialReader;
+    private readonly Func<bool> _includeUnknownWindows;
 
     public string ProviderId => "claude";
 
-    public ClaudeQuotaProvider(HttpClient httpClient, ClaudeCredentialReader? credentialReader = null)
+    public ClaudeQuotaProvider(HttpClient httpClient, ClaudeCredentialReader? credentialReader = null,
+        Func<bool>? includeUnknownWindows = null)
     {
         _httpClient = httpClient;
         _credentialReader = credentialReader ?? new ClaudeCredentialReader();
+        _includeUnknownWindows = includeUnknownWindows ?? (() => false);
     }
 
     public async Task<ProviderSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default)
@@ -154,7 +161,8 @@ public sealed class ClaudeQuotaProvider : IQuotaProvider
                 }
             }
 
-            // 未知窗口（服务端新增字段）原样展示，不因为不认识就丢弃。
+            // 未知窗口（服务端新增字段）：默认隐藏，用户显式开启"显示未识别窗口"后才展示，
+            // 且统一用中文标签带出原始 id，避免面板上出现 nimbus_quill 这种看不懂的英文名。
             foreach (var prop in root.EnumerateObject())
             {
                 if (prop.Name == "extra_usage" || KnownTierOrder.Contains(prop.Name))
@@ -162,16 +170,18 @@ public sealed class ClaudeQuotaProvider : IQuotaProvider
                     continue;
                 }
 
-                if (TryParseWindow(prop.Name, prop.Value, out var window))
+                if (!_includeUnknownWindows() || !TryParseWindow(prop.Name, prop.Value, out var window))
                 {
-                    windows.Add(window);
+                    continue;
                 }
+
+                windows.Add(window with { DisplayName = $"其他额度（{prop.Name}）" });
             }
 
             if (windows.Count == 0)
             {
                 return BuildSnapshot(ProviderState.ProviderError, ErrorCategory.ResponseFormat,
-                    "Claude 用量接口未返回任何可识别的额度窗口");
+                    "Claude 用量接口未返回任何可识别的额度窗口（如需查看未识别的新窗口，可在设置中开启显示）");
             }
 
             var worst = windows.Min(w => w.RemainingPercent);

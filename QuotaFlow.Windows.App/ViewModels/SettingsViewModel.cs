@@ -28,6 +28,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _startWithWindows;
     [ObservableProperty] private ThemeMode _theme;
     [ObservableProperty] private MiniMaxRegion _miniMaxRegion;
+    [ObservableProperty] private bool _showUnknownWindows;
 
     [ObservableProperty] private string _miniMaxApiKeyInput = string.Empty;
     [ObservableProperty] private string _deepSeekApiKeyInput = string.Empty;
@@ -65,7 +66,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private string _statusMessage = string.Empty;
 
     /// <summary>身份验证入口，默认用 Windows Hello/密码；单测里可以换成假实现。</summary>
-    private readonly Func<string, Task<bool>> _verifyIdentity;
+    private readonly Func<string, Task<IdentityVerificationResult>> _verifyIdentity;
 
     public int[] AllowedRefreshIntervals => AppSettings.AllowedRefreshIntervals;
 
@@ -83,7 +84,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     public IAsyncRelayCommand ToggleRevealDeepSeekKeyCommand { get; }
 
     public SettingsViewModel(AppSettingsStore settingsStore, SecureCredentialStore credentialStore, LocalCache cache,
-        AppSettings current, Func<string, Task<bool>>? verifyIdentity = null)
+        AppSettings current, Func<string, Task<IdentityVerificationResult>>? verifyIdentity = null)
     {
         _settingsStore = settingsStore;
         _credentialStore = credentialStore;
@@ -96,6 +97,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _startWithWindows = AutoStartService.IsEnabled();
         _theme = current.Theme;
         _miniMaxRegion = current.MiniMaxRegion;
+        _showUnknownWindows = current.ShowUnknownWindows;
 
         SaveMiniMaxKeyCommand = new RelayCommand(SaveMiniMaxKey);
         SaveDeepSeekKeyCommand = new RelayCommand(SaveDeepSeekKey);
@@ -127,9 +129,10 @@ public sealed partial class SettingsViewModel : ObservableObject
             return;
         }
 
-        if (!await _verifyIdentity("验证身份以查看 MiniMax API Key 明文"))
+        var result = await _verifyIdentity("验证身份以查看 MiniMax API Key 明文");
+        if (result != IdentityVerificationResult.Verified)
         {
-            StatusMessage = "验证未通过，无法显示明文";
+            StatusMessage = result == IdentityVerificationResult.Cancelled ? "已取消验证" : "验证失败，无法显示明文";
             return;
         }
 
@@ -145,9 +148,10 @@ public sealed partial class SettingsViewModel : ObservableObject
             return;
         }
 
-        if (!await _verifyIdentity("验证身份以查看 DeepSeek API Key 明文"))
+        var result = await _verifyIdentity("验证身份以查看 DeepSeek API Key 明文");
+        if (result != IdentityVerificationResult.Verified)
         {
-            StatusMessage = "验证未通过，无法显示明文";
+            StatusMessage = result == IdentityVerificationResult.Cancelled ? "已取消验证" : "验证失败，无法显示明文";
             return;
         }
 
@@ -258,6 +262,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             StartWithWindows = StartWithWindows,
             Theme = Theme,
             MiniMaxRegion = MiniMaxRegion,
+            ShowUnknownWindows = ShowUnknownWindows,
         };
 
         _settingsStore.Save(settings);

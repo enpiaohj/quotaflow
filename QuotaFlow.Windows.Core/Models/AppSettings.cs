@@ -35,5 +35,11 @@ public sealed class AppSettings
     /// <summary>MiniMax 站点区域，默认国内站。</summary>
     public MiniMaxRegion MiniMaxRegion { get; set; } = MiniMaxRegion.China;
 
+    /// <summary>
+    /// 是否在面板上显示服务端新出现、尚未识别的额度窗口（例如 nimbus_quill）。
+    /// 默认关闭：这类新窗口大多是 0% 使用、无重置时间的空额度，原样透传成英文名展示既看不懂也占地方。
+    /// </summary>
+    public bool ShowUnknownWindows { get; set; }
+
     public static readonly int[] AllowedRefreshIntervals = [5, 10, 15, 30];
 }

@@ -40,20 +40,64 @@ public class ClaudeQuotaProviderTests
     }
 
     [Fact]
-    public void ParseResponse_UnknownWindow_IsStillSurfaced()
+    public void ParseResponse_UnknownWindow_HiddenByDefault()
     {
-        // 服务端新增了一个未预先建模的窗口名，不应该被丢弃——这在真实联调中已经遇到过
-        // （官方接口曾返回过一个未文档化的窗口）。
+        // 服务端新增了未预先建模的窗口（真实联调遇到过的 nimbus_quill 就是这种：0% 使用、
+        // 无重置时间）。默认不展示——避免面板上冒出看不懂的英文名。
         var json = """
             {
               "five_hour": { "utilization": 10, "resets_at": "2026-08-27T18:30:00Z" },
-              "some_new_window": { "utilization": 0 }
+              "nimbus_quill": { "utilization": 0 }
             }
             """;
 
         var snapshot = CreateProvider().ParseResponse(json);
 
-        Assert.Contains(snapshot.QuotaWindows, w => w.Id == "some_new_window");
+        Assert.Contains(snapshot.QuotaWindows, w => w.Id == "five_hour");
+        Assert.DoesNotContain(snapshot.QuotaWindows, w => w.Id == "nimbus_quill");
+    }
+
+    [Fact]
+    public void ParseResponse_UnknownWindow_ShownWhenEnabled_WithChineseLabel()
+    {
+        // 用户在设置里显式开启"显示未识别窗口"后才展示，且统一换成中文标签、保留原始 id。
+        var json = """
+            {
+              "five_hour": { "utilization": 10, "resets_at": "2026-08-27T18:30:00Z" },
+              "nimbus_quill": { "utilization": 0 }
+            }
+            """;
+
+        var provider = new ClaudeQuotaProvider(new HttpClient(), includeUnknownWindows: () => true);
+        var snapshot = provider.ParseResponse(json);
+
+        var unknown = Assert.Single(snapshot.QuotaWindows, w => w.Id == "nimbus_quill");
+        Assert.Contains("其他额度", unknown.DisplayName);
+    }
+
+    [Fact]
+    public void ParseResponse_OnlyUnknownWindow_WhenHidden_ReturnsProviderError()
+    {
+        // 全部都是未识别窗口且默认隐藏时，确实没有可展示的东西，按"无可识别窗口"处理。
+        var snapshot = CreateProvider().ParseResponse("""{ "nimbus_quill": { "utilization": 0 } }""");
+
+        Assert.Equal(ProviderState.ProviderError, snapshot.State);
+        Assert.Equal(ErrorCategory.ResponseFormat, snapshot.ErrorCategory);
+    }
+
+    [Fact]
+    public void ParseResponse_SevenDayOmelette_IsRecognizedAsDesignWindow()
+    {
+        // 官方新增的 Claude Design 周额度窗口，应被识别而不是当作未知窗口隐藏。
+        var json = """
+            { "seven_day_omelette": { "utilization": 20, "resets_at": "2026-08-30T10:00:00Z" } }
+            """;
+
+        var snapshot = CreateProvider().ParseResponse(json);
+
+        var window = Assert.Single(snapshot.QuotaWindows);
+        Assert.Equal("seven_day_omelette", window.Id);
+        Assert.Contains("Design", window.DisplayName);
     }
 
     [Fact]

@@ -112,6 +112,16 @@
                 </StackPanel>
             </Border>
 
+            <!-- 额度窗口显示 -->
+            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
+                <StackPanel>
+                    <TextBlock Text="额度窗口显示" Style="{StaticResource SectionTitle}" />
+                    <CheckBox Content="显示未识别的新额度窗口（默认关闭）" IsChecked="{Binding ShowUnknownWindows}" />
+                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
+                               Text="服务端偶尔会新增尚未识别的额度窗口（例如 nimbus_quill）。默认隐藏，不占面板空间；开启后这类窗口会以中文标签显示出来，便于观察。" />
+                </StackPanel>
+            </Border>
+
             <!-- Claude / Codex 登录检测 -->
             <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
                 <StackPanel>
@@ -231,7 +241,7 @@
                 <StackPanel>
                     <TextBlock Text="关于" Style="{StaticResource SectionTitle}" />
                     <TextBlock FontSize="12" Foreground="{DynamicResource Brush.TextPrimary}"
-                               Text="QuotaFlow for Windows · v1.0.0" Margin="0,0,0,4" />
+                               Text="QuotaFlow for Windows · v1.0.2" Margin="0,0,0,4" />
                     <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
                                Text="Claude/Codex/MiniMax 额度查询的接口路径参考了 cc-switch（MIT License，https://github.com/farion1231/cc-switch）并结合本机实测确认。详见项目 README 的“已知风险与致谢”一节。" />
                 </StackPanel>

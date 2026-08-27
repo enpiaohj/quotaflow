@@ -75,7 +75,9 @@ public partial class App : Application
             ? MiniMaxQuotaProvider.DomainIntl
             : MiniMaxQuotaProvider.DomainCn;
 
-        yield return new ClaudeQuotaProvider(_httpClient);
+        // 未知额度窗口是否展示由设置决定；每次查询时现读设置文件，改完设置不用重启立即生效。
+        yield return new ClaudeQuotaProvider(_httpClient,
+            includeUnknownWindows: () => _settingsStore.Load().ShowUnknownWindows);
         yield return new CodexQuotaProvider(_httpClient);
         yield return new MiniMaxQuotaProvider(_httpClient, () => _credentialStore.TryRead(SettingsViewModel.MiniMaxKeyName), minimaxDomain);
         yield return new DeepSeekBalanceProvider(_httpClient, () => _credentialStore.TryRead(SettingsViewModel.DeepSeekKeyName));
