@@ -3,7 +3,6 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:conv="clr-namespace:QuotaFlow.Windows.App.Converters"
         Title="QuotaFlow 设置" Width="440" Height="720" MinWidth="400" MinHeight="480"
-        Icon="Assets/app.ico"
         Background="{DynamicResource Brush.Background}"
         WindowStartupLocation="CenterScreen" ResizeMode="CanResize">
 
@@ -32,6 +31,8 @@
         <Style TargetType="PasswordBox">
             <Setter Property="Padding" Value="8,6" />
             <Setter Property="BorderBrush" Value="{DynamicResource Brush.CardBorder}" />
+            <!-- API Key 只会是 ASCII 字符，禁用输入法：既不需要中文候选框，也避免第三方 IME 钩子冲突。 -->
+            <Setter Property="InputMethod.IsInputMethodEnabled" Value="False" />
         </Style>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
         <Style x:Key="EyeButton" TargetType="Button">

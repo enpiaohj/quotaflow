@@ -8,6 +8,14 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- app.ico 只用于 ApplicationIcon（exe 的 Win32 图标资源），不要在 XAML 里用 Icon="Assets/app.ico"
+         引用它——WPF 的 IconBitmapDecoder 对多尺寸 ICO 容器很挑剔，实测会在 InitializeComponent()
+         阶段抛 XamlParseException（哪怕已经把它声明成 Resource）。窗口标题栏图标改用下面这张
+         单尺寸 PNG，走的是更稳定的 BitmapImage 解码路径。 -->
+    <Resource Include="Assets\app_icon.png" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <!-- 升级到带 Windows SDK 投影的 TFM，仅为了调用 Windows.Security.Credentials.UI（Windows Hello）。 -->
@@ -23,7 +31,7 @@
     <RootNamespace>QuotaFlow.Windows.App</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
-    <Version>1.0.0</Version>
+    <Version>1.0.1</Version>
     <Product>QuotaFlow</Product>
     <Company>QuotaFlow</Company>
   </PropertyGroup>

@@ -1,3 +1,4 @@
+using System.IO;
 using System.Net.Http;
 using System.Windows;
 using System.Windows.Forms;
@@ -31,6 +32,17 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // 托盘常驻应用的硬性要求：任何一个窗口/绑定/第三方钩子（输入法、Shell 扩展……）抛出的
+        // 未处理异常都不能把整个进程带崩——那样用户会觉得"点一下设置，托盘图标就消失了"。
+        // 异常会记到 %LOCALAPPDATA%\QuotaFlow\crash.log，方便事后诊断，但绝不终止进程。
+        DispatcherUnhandledException += OnDispatcherUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException += OnAppDomainUnhandledException;
+        System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (_, args) =>
+        {
+            LogCrash(args.Exception);
+            args.SetObserved();
+        };
 
         _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
         _credentialStore = new SecureCredentialStore();
@@ -120,6 +132,39 @@ public partial class App : Application
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow.Show();
         _settingsWindow.Activate();
+    }
+
+    private void OnDispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
+    {
+        LogCrash(e.Exception);
+        e.Handled = true; // 吞掉异常，UI 线程继续跑，托盘图标不会消失。
+    }
+
+    private void OnAppDomainUnhandledException(object sender, UnhandledExceptionEventArgs e)
+    {
+        if (e.ExceptionObject is Exception ex)
+        {
+            LogCrash(ex);
+        }
+    }
+
+    /// <summary>
+    /// 记录异常类型/消息/堆栈，不包含请求体或凭据（这些异常来自 UI 层，正常不会携带密钥；
+    /// Provider 内部的网络异常早已在 Core 里被分类成 ProviderSnapshot，不会走到这里）。
+    /// </summary>
+    private static void LogCrash(Exception ex)
+    {
+        try
+        {
+            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "QuotaFlow");
+            Directory.CreateDirectory(dir);
+            var line = $"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}] {ex.GetType().FullName}: {ex.Message}\n{ex.StackTrace}\n\n";
+            File.AppendAllText(Path.Combine(dir, "crash.log"), line);
+        }
+        catch
+        {
+            // 连日志都写不进去就算了，绝不能因为记日志本身又抛一次异常。
+        }
     }
 
     private void OnSystemPreferenceChanged(object? sender, UserPreferenceChangedEventArgs e)

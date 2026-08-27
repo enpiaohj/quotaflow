@@ -2,6 +2,24 @@
 
 版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)（`主版本.次版本.修订号`），每次发布打对应的 Git tag（`vX.Y.Z`）。
 
+## [1.0.1] - 2026-08-27
+
+### 修复
+
+- **严重**：点击"设置"会导致整个托盘应用崩溃退出。根因是 `SettingsWindow.xaml` 里用
+  `Icon="..."` 通过 XAML 类型转换器加载图标，在动态 `new` 出来的窗口（非 `StartupUri`
+  主窗口）上会在 `InitializeComponent()` 阶段抛 `XamlParseException`；WPF 对 UI 线程的
+  未处理异常默认直接终止进程。改为在代码后置里用 `BitmapImage` + pack URI 手动设置图标。
+- 补上全局异常兜底（`DispatcherUnhandledException` / `AppDomain.UnhandledException` /
+  `TaskScheduler.UnobservedTaskException`）：往后任何界面层未预料的异常都只会记录到
+  `%LOCALAPPDATA%\QuotaFlow\crash.log`，不会再让托盘图标整个消失。
+- 设置页密钥输入框禁用输入法（`InputMethod.IsInputMethodEnabled="False"`），避免第三方
+  输入法钩子在这类只需要 ASCII 字符的输入框上触发冲突。
+
+### 优化
+
+- 托盘面板卡片间距进一步收紧（页脚"刚刚更新"行的留白从两段叠加的 14px 降到 2px）。
+
 ## [1.0.0] - 2026-08-27
 
 首个可用版本。

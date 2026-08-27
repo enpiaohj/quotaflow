@@ -125,7 +125,7 @@
                     </StackPanel>
 
                     <!-- 底部：更新时间 + 单卡刷新 -->
-                    <Grid Margin="0,8,0,0">
+                    <Grid Margin="0,2,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
