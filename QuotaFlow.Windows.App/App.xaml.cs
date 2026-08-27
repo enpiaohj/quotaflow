@@ -56,7 +56,7 @@ public partial class App : Application
         var providers = BuildProviders(settings);
         var coordinator = new RefreshCoordinator(providers);
 
-        _panelViewModel = new MainPanelViewModel(coordinator, _cache, settings);
+        _panelViewModel = new MainPanelViewModel(coordinator, _cache, settings, BuildProviders);
         _panelViewModel.SettingsRequested += (_, _) => OpenSettings();
         _panelViewModel.ExitRequested += (_, _) => Shutdown();
 
@@ -95,6 +95,26 @@ public partial class App : Application
         yield return new DeepSeekBalanceProvider(_httpClient,
             () => _credentialStore.TryRead(SettingsViewModel.DeepSeekKeyName),
             settings.DeepSeekEndpointOverride);
+
+        // 设置页手动添加的自定义平台（OpenCode / GO 等）。Id 固定为 custom-{n}，凭据键由此派生；
+        // 防御性跳过配置残缺（Id/地址/取值路径为空、撞内置 Id、重复自定义 Id）的条目，
+        // 不会让一条坏配置拖垮其余平台。
+        var builtInIds = new HashSet<string> { "claude", "codex", "minimax", "deepseek" };
+        var seenIds = new HashSet<string>();
+        foreach (var custom in settings.CustomPlatforms ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(custom.Id) ||
+                builtInIds.Contains(custom.Id) ||
+                !seenIds.Add(custom.Id) ||
+                string.IsNullOrWhiteSpace(custom.Endpoint) ||
+                string.IsNullOrWhiteSpace(custom.ValuePath))
+            {
+                continue;
+            }
+
+            var keyName = custom.CredentialKeyName;
+            yield return new CustomPlatformProvider(_httpClient, custom, () => _credentialStore.TryRead(keyName));
+        }
     }
 
     private void SetupTrayIcon()

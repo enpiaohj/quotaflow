@@ -4,6 +4,7 @@ using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using QuotaFlow.Windows.Core.Models;
+using QuotaFlow.Windows.Core.Providers;
 using QuotaFlow.Windows.Core.Services;
 
 namespace QuotaFlow.Windows.App.ViewModels;
@@ -17,6 +18,7 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
 {
     private readonly RefreshCoordinator _coordinator;
     private readonly LocalCache _cache;
+    private readonly Func<AppSettings, IEnumerable<IQuotaProvider>> _providerFactory;
     private AppSettings _settings;
     private readonly DispatcherTimer _tickTimer;
     private DispatcherTimer? _autoRefreshTimer;
@@ -48,11 +50,16 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
     public event EventHandler? SettingsRequested;
     public event EventHandler? ExitRequested;
 
-    public MainPanelViewModel(RefreshCoordinator coordinator, LocalCache cache, AppSettings initialSettings)
+    public MainPanelViewModel(
+        RefreshCoordinator coordinator,
+        LocalCache cache,
+        AppSettings initialSettings,
+        Func<AppSettings, IEnumerable<IQuotaProvider>> providerFactory)
     {
         _coordinator = coordinator;
         _cache = cache;
         _settings = initialSettings;
+        _providerFactory = providerFactory;
 
         // 初始顺序：Claude → Codex → MiniMax → DeepSeek（文档 §5.4），随后按设置里的 PlatformOrder 重排。
         foreach (var id in _coordinator.ProviderIds)
@@ -125,12 +132,44 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>设置页保存后调用：自动刷新间隔、平台顺序立即生效，不需要重启应用。</summary>
+    /// <summary>
+    /// 设置页保存后调用：自动刷新间隔、平台顺序、接口地址覆盖、自定义平台的增删改全部立即生效，
+    /// 不需要重启应用。会用新设置重建 provider 集合（<see cref="RefreshCoordinator.Rebuild"/>），
+    /// 再对账卡片集合（保留仍在的平台实例、增删变化的平台）。
+    /// </summary>
     public void UpdateSettings(AppSettings settings)
     {
         _settings = settings;
-        ApplyAutoRefreshInterval(settings.AutoRefreshIntervalMinutes);
+        _coordinator.Rebuild(_providerFactory(settings));
+        ReconcileCards();
         ApplyPlatformOrder(settings.PlatformOrder);
+        ApplyAutoRefreshInterval(settings.AutoRefreshIntervalMinutes);
+        TickAll();
+    }
+
+    /// <summary>
+    /// 把卡片集合与 coordinator 当前持有的平台集合对齐：删去已不存在的平台卡片（保留仍存在的
+    /// 卡片实例，其缓存/状态不受影响），新增平台尾随追加，随后由 <see cref="ApplyPlatformOrder"/> 排定顺序。
+    /// </summary>
+    private void ReconcileCards()
+    {
+        var liveIds = _coordinator.ProviderIds;
+
+        for (var i = Cards.Count - 1; i >= 0; i--)
+        {
+            if (!liveIds.Contains(Cards[i].ProviderId))
+            {
+                Cards.RemoveAt(i);
+            }
+        }
+
+        foreach (var id in liveIds)
+        {
+            if (Cards.All(c => c.ProviderId != id))
+            {
+                Cards.Add(new ProviderCardViewModel(id, DisplayNameFor(id), () => RefreshOneAsync(id)));
+            }
+        }
     }
 
     /// <summary>
@@ -213,13 +252,18 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
         _ => $"{(int)delta.TotalDays} 天前更新",
     };
 
-    private static string DisplayNameFor(string providerId) => providerId switch
+    /// <summary>
+    /// 平台显示名：内置四平台走映射表，自定义平台查设置的 Name。改为实例方法后，
+    /// 新建自定义平台卡片时能立刻拿到正确名字，避免初始帧先闪原始 id 再被快照覆盖。
+    /// 读取方一律 <c>?? []</c> 兜底，防手改配置出现 null。
+    /// </summary>
+    private string DisplayNameFor(string providerId) => providerId switch
     {
         "claude" => "Claude",
         "codex" => "Codex",
         "minimax" => "MiniMax",
         "deepseek" => "DeepSeek",
-        _ => providerId,
+        _ => (_settings.CustomPlatforms ?? []).FirstOrDefault(p => p.Id == providerId)?.Name ?? providerId,
     };
 
     public void Dispose()

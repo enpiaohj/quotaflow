@@ -87,11 +87,15 @@ public sealed class AppSettingsStoreTests : IDisposable
         {
             Theme = ThemeMode.Dark,
             ClaudeEndpointOverride = "https://secret-override.example/usage",
+            CustomPlatforms =
+            [
+                new CustomPlatformSettings { Id = "custom-1", Name = "OpenCode", Endpoint = "https://opencode.example", ValuePath = "data.quota" },
+            ],
         });
 
         var text = File.ReadAllText(_path);
 
-        // 信封元信息可见，但明文内容绝不能落盘。
+        // 信封元信息可见，但明文内容（含自定义平台定义）绝不能落盘。
         Assert.Contains("schemaVersion", text);
         Assert.Contains("dpapi-user-v1", text);
         Assert.Contains("\"payload\"", text);
@@ -99,6 +103,62 @@ public sealed class AppSettingsStoreTests : IDisposable
         Assert.DoesNotContain("refreshOnStartup", text);
         Assert.DoesNotContain("secret-override.example", text);
         Assert.DoesNotContain("theme", text);
+        Assert.DoesNotContain("customPlatforms", text);
+        Assert.DoesNotContain("opencode.example", text);
+    }
+
+    [Fact]
+    public void SaveThenLoad_RoundTripsCustomPlatforms()
+    {
+        var original = new AppSettings
+        {
+            CustomPlatforms =
+            [
+                new CustomPlatformSettings
+                {
+                    Id = "custom-1",
+                    Name = "OpenCode",
+                    Endpoint = "https://opencode.example/api/usage",
+                    AuthKind = CustomAuthKind.CustomHeader,
+                    HeaderName = "X-API-Key",
+                    DataKind = CustomDataKind.Balance,
+                    ValuePath = "data.balance",
+                    ResetsAtPath = "data.updated_at",
+                    Currency = "USD",
+                },
+                new CustomPlatformSettings
+                {
+                    Id = "custom-2",
+                    Name = "GO",
+                    Endpoint = "https://go.example/usage",
+                    AuthKind = CustomAuthKind.None,
+                    DataKind = CustomDataKind.RemainingPercent,
+                    ValuePath = "data.quota_left",
+                },
+            ],
+        };
+
+        _store.Save(original);
+        var loaded = _store.Load();
+
+        Assert.Equal(2, loaded.CustomPlatforms!.Count);
+
+        var first = loaded.CustomPlatforms[0];
+        Assert.Equal("custom-1", first.Id);
+        Assert.Equal("OpenCode", first.Name);
+        Assert.Equal("https://opencode.example/api/usage", first.Endpoint);
+        Assert.Equal(CustomAuthKind.CustomHeader, first.AuthKind);
+        Assert.Equal("X-API-Key", first.HeaderName);
+        Assert.Equal(CustomDataKind.Balance, first.DataKind);
+        Assert.Equal("data.balance", first.ValuePath);
+        Assert.Equal("data.updated_at", first.ResetsAtPath);
+        Assert.Equal("USD", first.Currency);
+
+        var second = loaded.CustomPlatforms[1];
+        Assert.Equal("custom-2", second.Id);
+        Assert.Equal("GO", second.Name);
+        Assert.Equal(CustomAuthKind.None, second.AuthKind);
+        Assert.Equal(CustomDataKind.RemainingPercent, second.DataKind);
     }
 
     [Fact]

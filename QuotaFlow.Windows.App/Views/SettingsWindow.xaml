@@ -182,7 +182,7 @@
                     <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
                                Text="{Binding EffectiveClaudeUrl, StringFormat=当前使用：{0}}" />
                     <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
-                               Text="留空使用内置默认地址，仅地址变更时填写。保存设置后重启应用生效。" />
+                               Text="留空使用内置默认地址，仅地址变更时填写。保存设置后立即生效。" />
                 </StackPanel>
             </Border>
 
@@ -207,7 +207,7 @@
                     <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
                                Text="{Binding EffectiveCodexUrl, StringFormat=当前使用：{0}}" />
                     <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
-                               Text="留空使用内置默认地址，仅地址变更时填写。保存设置后重启应用生效。" />
+                               Text="留空使用内置默认地址，仅地址变更时填写。保存设置后立即生效。" />
                 </StackPanel>
             </Border>
 
@@ -254,7 +254,7 @@
                     <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
                                Text="{Binding EffectiveMiniMaxUrl, StringFormat=当前使用：{0}}" />
                     <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
-                               Text="留空使用内置默认地址，仅地址变更时填写。保存设置后重启应用生效。" />
+                               Text="留空使用内置默认地址，仅地址变更时填写。保存设置后立即生效。" />
                 </StackPanel>
             </Border>
 
@@ -295,7 +295,148 @@
                     <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
                                Text="{Binding EffectiveDeepSeekUrl, StringFormat=当前使用：{0}}" />
                     <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
-                               Text="留空使用内置默认地址，仅地址变更时填写。保存设置后重启应用生效。" />
+                               Text="留空使用内置默认地址，仅地址变更时填写。保存设置后立即生效。" />
+                </StackPanel>
+            </Border>
+
+            <!-- 自定义平台 -->
+            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="自定义平台" Style="{StaticResource SectionTitle}" />
+                        <Button Grid.Column="1" Content="+ 添加自定义平台" Style="{StaticResource Style.SecondaryButton}"
+                                AutomationProperties.AutomationId="AddCustomPlatformButton"
+                                Command="{Binding AddCustomPlatformCommand}" />
+                    </Grid>
+                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
+                               Text="除内置平台外，可手动添加其他额度接口（如 OpenCode / GO）。保存后立即显示在面板上，无需重启。" />
+                    <ItemsControl ItemsSource="{Binding CustomPlatformRows}" Margin="0,4,0,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="1"
+                                        CornerRadius="6" Margin="0,6,0,0" Padding="10">
+                                    <StackPanel>
+                                        <!-- 收起态：名称 + 展开/删除 -->
+                                        <Grid Visibility="{Binding HeaderVisibility}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox Padding="8,6" FontSize="12" VerticalAlignment="Center"
+                                                     AutomationProperties.AutomationId="{Binding Id, StringFormat=CustomName_{0}}"
+                                                     Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" />
+                                            <Button Grid.Column="1" Content="展开" Style="{StaticResource Style.SecondaryButton}"
+                                                    Margin="0,0,6,0"
+                                                    AutomationProperties.AutomationId="{Binding Id, StringFormat=ExpandCustom_{0}}"
+                                                    Command="{Binding ToggleExpandCommand}" />
+                                            <Button Grid.Column="2" Content="删除" Style="{StaticResource Style.SecondaryButton}"
+                                                    AutomationProperties.AutomationId="{Binding Id, StringFormat=DeleteCustom_{0}}"
+                                                    Command="{Binding DeleteCommand}" />
+                                        </Grid>
+
+                                        <!-- 展开态：完整编辑区 -->
+                                        <StackPanel Visibility="{Binding EditorVisibility}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="显示名称" Style="{StaticResource FieldLabel}" />
+                                                <Button Grid.Column="1" Content="收起" Style="{StaticResource Style.SecondaryButton}"
+                                                        AutomationProperties.AutomationId="{Binding Id, StringFormat=CollapseCustom_{0}}"
+                                                        Command="{Binding ToggleExpandCommand}" />
+                                            </Grid>
+                                            <TextBox Style="{StaticResource EndpointBox}"
+                                                     AutomationProperties.AutomationId="{Binding Id, StringFormat=CustomName_{0}}"
+                                                     Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" />
+
+                                            <TextBlock Text="接口地址" Style="{StaticResource FieldLabel}" Margin="0,10,0,0" />
+                                            <TextBox Style="{StaticResource EndpointBox}"
+                                                     AutomationProperties.AutomationId="{Binding Id, StringFormat=CustomEndpoint_{0}}"
+                                                     Text="{Binding Endpoint, UpdateSourceTrigger=PropertyChanged}" />
+
+                                            <TextBlock Text="鉴权方式" Style="{StaticResource FieldLabel}" Margin="0,10,0,0" />
+                                            <StackPanel Orientation="Horizontal">
+                                                <RadioButton AutomationProperties.AutomationId="{Binding Id, StringFormat=AuthRadio_{0}_Bearer}"
+                                                             GroupName="{Binding Id, StringFormat=Auth_{0}}" Content="Bearer Token"
+                                                             IsChecked="{Binding AuthKind, Converter={StaticResource EnumEquals}, ConverterParameter=BearerKey}" />
+                                                <RadioButton AutomationProperties.AutomationId="{Binding Id, StringFormat=AuthRadio_{0}_Header}"
+                                                             GroupName="{Binding Id, StringFormat=Auth_{0}}" Content="自定义请求头"
+                                                             IsChecked="{Binding AuthKind, Converter={StaticResource EnumEquals}, ConverterParameter=CustomHeader}" />
+                                                <RadioButton AutomationProperties.AutomationId="{Binding Id, StringFormat=AuthRadio_{0}_None}"
+                                                             GroupName="{Binding Id, StringFormat=Auth_{0}}" Content="无需鉴权"
+                                                             IsChecked="{Binding AuthKind, Converter={StaticResource EnumEquals}, ConverterParameter=None}" />
+                                            </StackPanel>
+
+                                            <StackPanel Visibility="{Binding HeaderNameVisibility}">
+                                                <TextBlock Text="请求头名称（自定义请求头方式）" Style="{StaticResource FieldLabel}" Margin="0,8,0,0" />
+                                                <TextBox Style="{StaticResource EndpointBox}"
+                                                         Text="{Binding HeaderName, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+
+                                            <!-- 密钥块（AuthKind != None 时显示） -->
+                                            <StackPanel Visibility="{Binding KeyVisibility}" Margin="0,8,0,0">
+                                                <Grid>
+                                                    <TextBox Style="{StaticResource SecretInputBox}"
+                                                             AutomationProperties.AutomationId="{Binding Id, StringFormat=CustomKey_{0}}"
+                                                             Text="{Binding KeyDisplayText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                             IsReadOnly="{Binding KeyIsReadOnly}" />
+                                                    <Button Style="{StaticResource EyeButton}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                            Margin="0,0,4,0" Content="&#128065;" Visibility="{Binding KeyEyeVisibility}"
+                                                            Command="{Binding ToggleRevealKeyCommand}" ToolTip="验证身份后查看明文 Key" />
+                                                </Grid>
+                                                <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
+                                                           Text="默认显示掩码；点击眼睛并验证身份后可查看明文并编辑。保存后立即写入 Windows 凭据管理器。" />
+                                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                                    <Button Content="保存 Key" Style="{StaticResource Style.PrimaryButton}" Margin="0,0,8,0"
+                                                            AutomationProperties.AutomationId="{Binding Id, StringFormat=SaveCustomKey_{0}}"
+                                                            Command="{Binding SaveKeyCommand}" />
+                                                    <Button Content="清除 Key" Style="{StaticResource Style.SecondaryButton}"
+                                                            Command="{Binding ClearKeyCommand}" />
+                                                </StackPanel>
+                                            </StackPanel>
+
+                                            <TextBlock Text="数据语义" Style="{StaticResource FieldLabel}" Margin="0,10,0,0" />
+                                            <StackPanel Orientation="Horizontal">
+                                                <RadioButton AutomationProperties.AutomationId="{Binding Id, StringFormat=DataRadio_{0}_Utilization}"
+                                                             GroupName="{Binding Id, StringFormat=Data_{0}}" Content="已使用百分比"
+                                                             IsChecked="{Binding DataKind, Converter={StaticResource EnumEquals}, ConverterParameter=UtilizationPercent}" />
+                                                <RadioButton AutomationProperties.AutomationId="{Binding Id, StringFormat=DataRadio_{0}_Remaining}"
+                                                             GroupName="{Binding Id, StringFormat=Data_{0}}" Content="剩余百分比"
+                                                             IsChecked="{Binding DataKind, Converter={StaticResource EnumEquals}, ConverterParameter=RemainingPercent}" />
+                                                <RadioButton AutomationProperties.AutomationId="{Binding Id, StringFormat=DataRadio_{0}_Balance}"
+                                                             GroupName="{Binding Id, StringFormat=Data_{0}}" Content="余额"
+                                                             IsChecked="{Binding DataKind, Converter={StaticResource EnumEquals}, ConverterParameter=Balance}" />
+                                            </StackPanel>
+
+                                            <TextBlock Text="取值路径（JSON）" Style="{StaticResource FieldLabel}" Margin="0,10,0,0" />
+                                            <TextBox Style="{StaticResource EndpointBox}"
+                                                     AutomationProperties.AutomationId="{Binding Id, StringFormat=CustomValuePath_{0}}"
+                                                     Text="{Binding ValuePath, UpdateSourceTrigger=PropertyChanged}" />
+                                            <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
+                                                       Text="点号属性 + [n] 数组下标，例如 data.usage_percent、data.items[0].quota。路径配错会在面板显示错误卡片，而不会显示成 0%。" />
+
+                                            <TextBlock Text="窗口重置时间路径（可选）" Style="{StaticResource FieldLabel}" Margin="0,10,0,0" />
+                                            <TextBox Style="{StaticResource EndpointBox}"
+                                                     Text="{Binding ResetsAtPath, UpdateSourceTrigger=PropertyChanged}" />
+                                            <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
+                                                       Text="支持 epoch 毫秒/秒数字或 ISO 时间字符串；留空表示不显示重置时间。" />
+
+                                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0" Visibility="{Binding CurrencyVisibility}">
+                                                <TextBlock Text="币种" Style="{StaticResource FieldLabel}" Margin="0,0,8,0" />
+                                                <TextBox Width="80" Padding="6,4" Text="{Binding Currency, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                 </StackPanel>
             </Border>
 
@@ -322,6 +463,7 @@
             </Border>
 
             <TextBlock Text="{Binding StatusMessage}" HorizontalAlignment="Center" Margin="0,4,0,10"
+                       AutomationProperties.AutomationId="StatusMessageText"
                        FontSize="12" Foreground="{DynamicResource Brush.AccentDeepSeek}" />
 
             <Button Content="保存设置" Style="{StaticResource Style.PrimaryButton}" HorizontalAlignment="Stretch"

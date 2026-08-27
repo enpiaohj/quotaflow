@@ -12,7 +12,7 @@ namespace QuotaFlow.Windows.Core.Services;
 /// </summary>
 public sealed class RefreshCoordinator
 {
-    private readonly IReadOnlyList<IQuotaProvider> _providers;
+    private IReadOnlyList<IQuotaProvider> _providers;
     private readonly Dictionary<string, Task<ProviderSnapshot>> _inFlight = new();
     private readonly object _gate = new();
 
@@ -22,6 +22,22 @@ public sealed class RefreshCoordinator
     }
 
     public IReadOnlyList<string> ProviderIds => _providers.Select(p => p.ProviderId).ToList();
+
+    /// <summary>
+    /// 用新列表整体替换 provider 集合（例如设置页新增/删除自定义平台、覆盖了接口地址后）。
+    /// 引用替换原子完成，列表本身不再被变异，读方不会看到撕裂状态；同时清空在途去重表——
+    /// 运行中的 task 不取消，只是后续同 id 刷新会基于新定义重发（定义已变，旧结果落在
+    /// 新定义卡片上随即被覆盖，可接受）。
+    /// </summary>
+    public void Rebuild(IEnumerable<IQuotaProvider> providers)
+    {
+        var list = providers.ToList();
+        lock (_gate)
+        {
+            _providers = list;
+            _inFlight.Clear();
+        }
+    }
 
     /// <summary>刷新单个平台；若已有一次刷新在途，返回同一个 Task。</summary>
     public Task<ProviderSnapshot> RefreshAsync(string providerId, CancellationToken cancellationToken = default)
@@ -36,7 +52,7 @@ public sealed class RefreshCoordinator
                 return existing;
             }
 
-            var task = RunAndTrackAsync(provider, cancellationToken);
+            var task = StartTrackedAsync(provider, cancellationToken);
             _inFlight[providerId] = task;
             return task;
         }
@@ -58,7 +74,35 @@ public sealed class RefreshCoordinator
         return map;
     }
 
-    private async Task<ProviderSnapshot> RunAndTrackAsync(IQuotaProvider provider, CancellationToken cancellationToken)
+    /// <summary>
+    /// 启动一次查询并在其完成时按"任务身份"清理去重表。
+    ///
+    /// 清理必须校验身份而不是按 id 盲删：<see cref="Rebuild"/> 允许同一 id 先后存在两个
+    /// 在途任务（旧任务未完成时列表被整体替换），若旧任务结束随手把新任务的去重项删掉，
+    /// 后续同 id 刷新就会并发重发。用 ContinueWith 引用任务自身，只有仍是当前注册项时才移除。
+    /// </summary>
+    private Task<ProviderSnapshot> StartTrackedAsync(IQuotaProvider provider, CancellationToken cancellationToken)
+    {
+        var task = RunAsync(provider, cancellationToken);
+        _ = task.ContinueWith(
+            _ =>
+            {
+                lock (_gate)
+                {
+                    if (_inFlight.TryGetValue(provider.ProviderId, out var current) &&
+                        ReferenceEquals(current, task))
+                    {
+                        _inFlight.Remove(provider.ProviderId);
+                    }
+                }
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.None,
+            TaskScheduler.Default);
+        return task;
+    }
+
+    private static async Task<ProviderSnapshot> RunAsync(IQuotaProvider provider, CancellationToken cancellationToken)
     {
         try
         {
@@ -76,13 +120,6 @@ public sealed class RefreshCoordinator
                 ErrorCategory = ErrorCategory.Unknown,
                 UserGuidance = "查询过程中发生意外错误，请稍后重试",
             };
-        }
-        finally
-        {
-            lock (_gate)
-            {
-                _inFlight.Remove(provider.ProviderId);
-            }
         }
     }
 }

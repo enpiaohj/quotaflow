@@ -89,4 +89,53 @@ public class RefreshCoordinatorTests
         // 串行会 >= 300ms；并行应明显少于两者之和。留足余量避免测试环境抖动导致误判。
         Assert.True(sw.ElapsedMilliseconds < 300, $"耗时 {sw.ElapsedMilliseconds}ms，看起来是串行执行的");
     }
+
+    // ---- Rebuild（设置页增删/修改平台后整体替换）----
+
+    [Fact]
+    public async Task Rebuild_ReplacesProviderSet_RefreshAllUsesNewSet()
+    {
+        var oldProvider = new FakeProvider("custom-1", TimeSpan.Zero);
+        var newProvider = new FakeProvider("custom-2", TimeSpan.Zero);
+        var coordinator = new RefreshCoordinator([oldProvider]);
+
+        coordinator.Rebuild([newProvider]);
+
+        Assert.Equal(["custom-2"], coordinator.ProviderIds);
+        var results = await coordinator.RefreshAllAsync();
+        Assert.True(results.ContainsKey("custom-2"));
+        Assert.False(results.ContainsKey("custom-1"));
+        Assert.Equal(0, oldProvider.CallCount);
+        Assert.Equal(1, newProvider.CallCount);
+    }
+
+    [Fact]
+    public async Task Rebuild_ThenRefreshRemovedId_Throws()
+    {
+        var coordinator = new RefreshCoordinator([new FakeProvider("custom-1", TimeSpan.Zero)]);
+
+        coordinator.Rebuild([new FakeProvider("custom-2", TimeSpan.Zero)]);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => coordinator.RefreshAsync("custom-1"));
+    }
+
+    [Fact]
+    public async Task Rebuild_ClearsInFlight_SameIdRetriesWithNewDefinition()
+    {
+        // 定义已变：在途的同 id 请求结束后，下一次刷新必须基于新集合重发，而不是复用旧去重项。
+        var slow = new FakeProvider("custom-1", TimeSpan.FromMilliseconds(150));
+        var coordinator = new RefreshCoordinator([slow]);
+
+        var inFlight = coordinator.RefreshAsync("custom-1");
+
+        // Rebuild 后 in-flight 去重表被清空；新 provider 同 id 刷新应触发一次新请求。
+        var fast = new FakeProvider("custom-1", TimeSpan.Zero);
+        coordinator.Rebuild([fast]);
+
+        var second = coordinator.RefreshAsync("custom-1");
+
+        await Task.WhenAll(inFlight, second);
+        Assert.Equal(1, slow.CallCount);
+        Assert.Equal(1, fast.CallCount);
+    }
 }

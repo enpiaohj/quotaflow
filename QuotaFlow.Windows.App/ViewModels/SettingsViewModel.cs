@@ -42,6 +42,9 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// <summary>设置页"平台显示与顺序"的当前顺序；保存时写入 AppSettings.PlatformOrder。</summary>
     public ObservableCollection<PlatformOrderRow> PlatformRows { get; } = [];
 
+    /// <summary>设置页"自定义平台"的可编辑行：新增/编辑的定义在保存前也驻留于此。</summary>
+    public ObservableCollection<CustomPlatformRow> CustomPlatformRows { get; } = [];
+
     private static readonly string[] DefaultPlatformOrder = ["claude", "codex", "minimax", "deepseek"];
 
     private static readonly IReadOnlyDictionary<string, string> PlatformDisplayNames = new Dictionary<string, string>
@@ -54,6 +57,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public IRelayCommand MovePlatformUpCommand { get; }
     public IRelayCommand MovePlatformDownCommand { get; }
+    public IRelayCommand AddCustomPlatformCommand { get; }
 
     // 接口地址覆盖（各平台分组下的"接口地址（可选）"）：空串 = 使用内置默认。保存时转成 null 落盘。
     [ObservableProperty]
@@ -219,14 +223,29 @@ public sealed partial class SettingsViewModel : ObservableObject
         MovePlatformUpCommand = new RelayCommand<PlatformOrderRow>(MovePlatformUp, r => r is not null && PlatformRows.IndexOf(r) > 0);
         MovePlatformDownCommand = new RelayCommand<PlatformOrderRow>(MovePlatformDown,
             r => r is not null && PlatformRows.IndexOf(r) >= 0 && PlatformRows.IndexOf(r) < PlatformRows.Count - 1);
+        AddCustomPlatformCommand = new RelayCommand(AddCustomPlatform);
 
-        // 平台顺序：优先用已保存的顺序，缺失的平台（例如将来版本新增）按默认顺序补在末尾。
+        // 已保存的自定义平台定义：按 Id 索引，供平台顺序加载与行加载共用。
+        var customDefs = new Dictionary<string, CustomPlatformSettings>();
+        foreach (var def in current.CustomPlatforms ?? [])
+        {
+            if (!string.IsNullOrWhiteSpace(def.Id) && !customDefs.ContainsKey(def.Id))
+            {
+                customDefs[def.Id] = def;
+            }
+        }
+
+        // 平台顺序：优先用已保存的顺序，缺失的（内置默认 + 自定义）按自然顺序补在末尾。
         var savedOrder = current.PlatformOrder ?? DefaultPlatformOrder;
         foreach (var id in savedOrder)
         {
             if (PlatformDisplayNames.TryGetValue(id, out var name))
             {
                 PlatformRows.Add(new PlatformOrderRow(id, name));
+            }
+            else if (customDefs.TryGetValue(id, out var def))
+            {
+                PlatformRows.Add(new PlatformOrderRow(id, def.Name));
             }
         }
 
@@ -236,6 +255,23 @@ public sealed partial class SettingsViewModel : ObservableObject
             {
                 PlatformRows.Add(new PlatformOrderRow(id, PlatformDisplayNames[id]));
             }
+        }
+
+        foreach (var def in customDefs.Values)
+        {
+            if (PlatformRows.All(r => r.ProviderId != def.Id))
+            {
+                PlatformRows.Add(new PlatformOrderRow(def.Id, def.Name));
+            }
+        }
+
+        // 自定义平台行：已保存的定义逐条加载成可编辑行。
+        foreach (var def in customDefs.Values)
+        {
+            var row = new CustomPlatformRow(def.Id, _credentialStore, _verifyIdentity,
+                DeleteCustomPlatform, s => StatusMessage = s, def);
+            row.NameChanged += OnCustomRowNameChanged;
+            CustomPlatformRows.Add(row);
         }
 
         RefreshCredentialLabels();
@@ -308,6 +344,10 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         HideMiniMaxKey();
         HideDeepSeekKey();
+        foreach (var row in CustomPlatformRows)
+        {
+            row.HideKey();
+        }
     }
 
     private void RefreshLoginStatus()
@@ -428,9 +468,105 @@ public sealed partial class SettingsViewModel : ObservableObject
         MovePlatformDownCommand.NotifyCanExecuteChanged();
     }
 
+    private void AddCustomPlatform()
+    {
+        var id = $"custom-{NextCustomPlatformIndex()}";
+        var row = new CustomPlatformRow(id, _credentialStore, _verifyIdentity,
+            DeleteCustomPlatform, s => StatusMessage = s);
+        row.NameChanged += OnCustomRowNameChanged;
+        CustomPlatformRows.Add(row);
+        PlatformRows.Add(new PlatformOrderRow(id, row.Name));
+        row.IsExpanded = true; // 新行直接展开，方便填写
+        MovePlatformUpCommand.NotifyCanExecuteChanged();
+        MovePlatformDownCommand.NotifyCanExecuteChanged();
+        StatusMessage = "已添加自定义平台（保存后生效）";
+    }
+
+    private void DeleteCustomPlatform(CustomPlatformRow row)
+    {
+        CustomPlatformRows.Remove(row);
+        row.NameChanged -= OnCustomRowNameChanged;
+
+        var orderRow = PlatformRows.FirstOrDefault(r => r.ProviderId == row.Id);
+        if (orderRow is not null)
+        {
+            PlatformRows.Remove(orderRow);
+        }
+
+        _credentialStore.Delete(row.CredentialKeyName); // 删平台即删凭据（含孤儿凭据）
+        MovePlatformUpCommand.NotifyCanExecuteChanged();
+        MovePlatformDownCommand.NotifyCanExecuteChanged();
+        StatusMessage = $"已删除「{row.Name}」";
+    }
+
+    /// <summary>自定义平台改名时，同步"平台显示与顺序"里的显示名。</summary>
+    private void OnCustomRowNameChanged(object? sender, EventArgs e)
+    {
+        if (sender is not CustomPlatformRow row)
+        {
+            return;
+        }
+
+        var orderRow = PlatformRows.FirstOrDefault(r => r.ProviderId == row.Id);
+        if (orderRow is not null)
+        {
+            orderRow.DisplayName = row.Name;
+        }
+    }
+
+    /// <summary>分配下一个 custom-{n}：取所有已存在行（含已保存定义）编号的最大值 + 1。</summary>
+    private int NextCustomPlatformIndex()
+    {
+        var max = 0;
+        foreach (var row in CustomPlatformRows)
+        {
+            if (TryParseCustomIndex(row.Id, out var n))
+            {
+                max = Math.Max(max, n);
+            }
+        }
+
+        return max + 1;
+    }
+
+    private static bool TryParseCustomIndex(string id, out int index)
+    {
+        index = 0;
+        const string prefix = "custom-";
+        if (!id.StartsWith(prefix, StringComparison.Ordinal) ||
+            !int.TryParse(id[prefix.Length..], out var n) ||
+            n < 0)
+        {
+            return false;
+        }
+
+        index = n;
+        return true;
+    }
+
     private void SaveGeneralSettings()
     {
         AutoStartService.SetEnabled(StartWithWindows);
+
+        // 自定义平台：逐行校验，配置不完整的行直接跳过（不落盘），并提示用户。
+        var customPlatforms = new List<CustomPlatformSettings>();
+        var skippedInvalid = false;
+        foreach (var row in CustomPlatformRows)
+        {
+            var def = row.ToSettings();
+            if (string.IsNullOrWhiteSpace(def.Name) ||
+                string.IsNullOrWhiteSpace(def.Endpoint) ||
+                string.IsNullOrWhiteSpace(def.ValuePath) ||
+                !Uri.TryCreate(def.Endpoint, UriKind.Absolute, out var uri) ||
+                uri.Scheme is not ("http" or "https") ||
+                (def.AuthKind == CustomAuthKind.CustomHeader && string.IsNullOrWhiteSpace(def.HeaderName)))
+            {
+                skippedInvalid = true;
+                continue;
+            }
+
+            customPlatforms.Add(def);
+        }
 
         var settings = new AppSettings
         {
@@ -448,11 +584,14 @@ public sealed partial class SettingsViewModel : ObservableObject
             DeepSeekEndpointOverride = ToNullIfEmpty(DeepSeekEndpointOverride),
             // 面板平台顺序（当前行的顺序即面板从上到下的顺序；空集合转 null = 用默认顺序）。
             PlatformOrder = PlatformRows.Count > 0 ? PlatformRows.Select(r => r.ProviderId).ToArray() : null,
+            CustomPlatforms = customPlatforms,
         };
 
         _settingsStore.Save(settings);
         SettingsSaved?.Invoke(this, settings);
-        StatusMessage = "设置已保存";
+        StatusMessage = skippedInvalid
+            ? "已保存（有自定义平台配置不完整被跳过：名称、接口地址、取值路径、有效 http(s) 地址、自定义请求头名任一缺失都不会保存）"
+            : "设置已保存";
     }
 
     private static string? ToNullIfEmpty(string? value)
@@ -503,5 +642,19 @@ public sealed partial class ClockDisplayFormatOption : ObservableObject
     public override string ToString() => Label;
 }
 
-/// <summary>设置页"平台显示与顺序"的单个平台行：显示名 + 面板中的位置（由列表顺序决定）。</summary>
-public sealed record PlatformOrderRow(string ProviderId, string DisplayName);
+/// <summary>
+/// 设置页"平台显示与顺序"的单个平台行：显示名 + 面板中的位置（由列表顺序决定）。
+/// 改为可写对象后，自定义平台改名时能同步更新这里显示的显示名。
+/// </summary>
+public sealed partial class PlatformOrderRow : ObservableObject
+{
+    public string ProviderId { get; }
+
+    [ObservableProperty] private string _displayName;
+
+    public PlatformOrderRow(string providerId, string displayName)
+    {
+        ProviderId = providerId;
+        _displayName = displayName;
+    }
+}

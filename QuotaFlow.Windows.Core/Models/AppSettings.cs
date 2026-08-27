@@ -81,5 +81,11 @@ public sealed class AppSettings
     /// </summary>
     public string[]? PlatformOrder { get; set; }
 
+    /// <summary>
+    /// 用户在设置页手动添加的自定义平台定义列表。纯新增字段（默认空列表），不 bump schemaVersion；
+    /// 读取方一律用 <c>?? []</c> 兜底，防手改配置出现 <c>customPlatforms: null</c>。
+    /// </summary>
+    public List<CustomPlatformSettings> CustomPlatforms { get; set; } = [];
+
     public static readonly int[] AllowedRefreshIntervals = [5, 10, 15, 30];
 }
