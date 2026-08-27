@@ -14,17 +14,21 @@ namespace QuotaFlow.Windows.Core.Providers;
 /// </summary>
 public sealed class DeepSeekBalanceProvider : IQuotaProvider
 {
-    private const string DataSourceUrl = "https://api.deepseek.com/user/balance";
+    private const string DefaultUsageUrl = "https://api.deepseek.com/user/balance";
+    private readonly string _dataSourceUrl;
 
     private readonly HttpClient _httpClient;
     private readonly Func<string?> _apiKeyProvider;
 
     public string ProviderId => "deepseek";
 
-    public DeepSeekBalanceProvider(HttpClient httpClient, Func<string?> apiKeyProvider)
+    /// <param name="endpointOverride">覆盖余额接口地址；空/未填时使用内置默认。</param>
+    public DeepSeekBalanceProvider(HttpClient httpClient, Func<string?> apiKeyProvider,
+        string? endpointOverride = null)
     {
         _httpClient = httpClient;
         _apiKeyProvider = apiKeyProvider;
+        _dataSourceUrl = EndpointResolver.Resolve(endpointOverride, DefaultUsageUrl);
     }
 
     public async Task<ProviderSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default)
@@ -35,7 +39,7 @@ public sealed class DeepSeekBalanceProvider : IQuotaProvider
             return NotConfigured();
         }
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, DataSourceUrl);
+        using var request = new HttpRequestMessage(HttpMethod.Get, _dataSourceUrl);
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
         request.Headers.Add("Accept", "application/json");
 
@@ -137,7 +141,7 @@ public sealed class DeepSeekBalanceProvider : IQuotaProvider
                 State = isAvailable ? ProviderState.Available : ProviderState.Critical,
                 Balance = balance,
                 LastUpdatedAt = DateTimeOffset.UtcNow,
-                DataSource = DataSourceUrl,
+                DataSource = _dataSourceUrl,
                 ErrorCategory = ErrorCategory.None,
                 UserGuidance = isAvailable ? null : "账户余额不可用，请检查 DeepSeek 账户状态",
             };
@@ -164,7 +168,7 @@ public sealed class DeepSeekBalanceProvider : IQuotaProvider
         ProviderId = ProviderId,
         DisplayName = "DeepSeek",
         State = ProviderState.NotConfigured,
-        DataSource = DataSourceUrl,
+        DataSource = _dataSourceUrl,
         ErrorCategory = ErrorCategory.NotConfigured,
         UserGuidance = "请在设置页填写 DeepSeek API Key",
     };
@@ -174,7 +178,7 @@ public sealed class DeepSeekBalanceProvider : IQuotaProvider
         ProviderId = ProviderId,
         DisplayName = "DeepSeek",
         State = state,
-        DataSource = DataSourceUrl,
+        DataSource = _dataSourceUrl,
         ErrorCategory = category,
         UserGuidance = guidance,
     };

@@ -25,19 +25,21 @@ public sealed class MiniMaxQuotaProvider : IQuotaProvider
 
     private readonly HttpClient _httpClient;
     private readonly Func<string?> _apiKeyProvider;
-    private readonly string _domain;
     private readonly string _dataSourceUrl;
 
     public string ProviderId => "minimax";
 
     /// <param name="apiKeyProvider">返回当前配置的 API Key；未配置时返回 null。</param>
     /// <param name="domain">MiniMax 站点域名，默认国内站（<see cref="DomainCn"/>）。</param>
-    public MiniMaxQuotaProvider(HttpClient httpClient, Func<string?> apiKeyProvider, string domain = DomainCn)
+    /// <param name="endpointOverride">覆盖用量接口完整地址；空/未填时按区域域名构建。</param>
+    public MiniMaxQuotaProvider(HttpClient httpClient, Func<string?> apiKeyProvider, string domain = DomainCn,
+        string? endpointOverride = null)
     {
         _httpClient = httpClient;
         _apiKeyProvider = apiKeyProvider;
-        _domain = domain;
-        _dataSourceUrl = $"https://{_domain}/v1/api/openplatform/coding_plan/remains";
+        _dataSourceUrl = string.IsNullOrWhiteSpace(endpointOverride)
+            ? $"https://{domain}/v1/api/openplatform/coding_plan/remains"
+            : endpointOverride.Trim();
     }
 
     public async Task<ProviderSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default)

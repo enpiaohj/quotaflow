@@ -29,6 +29,13 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private ThemeMode _theme;
     [ObservableProperty] private MiniMaxRegion _miniMaxRegion;
     [ObservableProperty] private bool _showUnknownWindows;
+    [ObservableProperty] private ClockDisplayFormat _clockDisplayFormat;
+
+    // 接口地址覆盖（"接口地址（高级）"卡片）：空串 = 使用内置默认。保存时转成 null 落盘。
+    [ObservableProperty] private string _claudeEndpointOverride = string.Empty;
+    [ObservableProperty] private string _codexEndpointOverride = string.Empty;
+    [ObservableProperty] private string _miniMaxEndpointOverride = string.Empty;
+    [ObservableProperty] private string _deepSeekEndpointOverride = string.Empty;
 
     [ObservableProperty] private string _miniMaxApiKeyInput = string.Empty;
     [ObservableProperty] private string _deepSeekApiKeyInput = string.Empty;
@@ -70,6 +77,25 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public int[] AllowedRefreshIntervals => AppSettings.AllowedRefreshIntervals;
 
+    /// <summary>"日期显示格式"下拉选项（标签 + 枚举值）。</summary>
+    public IReadOnlyList<ClockDisplayFormatOption> ClockDisplayFormatOptions { get; } =
+    [
+        new(ClockDisplayFormat.Full, "日期 + 周几 + 第几周 + 时间"),
+        new(ClockDisplayFormat.DateWeekdayTime, "日期 + 周几 + 时间"),
+        new(ClockDisplayFormat.DateTime, "日期 + 时间"),
+        new(ClockDisplayFormat.TimeOnly, "仅时间（实时）"),
+    ];
+
+    /// <summary>关于页版本号：直接取程序集版本（csproj &lt;Version&gt;），避免手工改 UI 文本造成漂移。</summary>
+    public string AppVersionText
+    {
+        get
+        {
+            var version = typeof(SettingsViewModel).Assembly.GetName().Version;
+            return $"QuotaFlow for Windows · v{(version is null ? "unknown" : version.ToString(3))}";
+        }
+    }
+
     /// <summary>保存后通知外部（MainPanelViewModel / ThemeManager）应用新设置。</summary>
     public event EventHandler<AppSettings>? SettingsSaved;
 
@@ -98,6 +124,11 @@ public sealed partial class SettingsViewModel : ObservableObject
         _theme = current.Theme;
         _miniMaxRegion = current.MiniMaxRegion;
         _showUnknownWindows = current.ShowUnknownWindows;
+        _clockDisplayFormat = current.ClockDisplayFormat;
+        _claudeEndpointOverride = current.ClaudeEndpointOverride ?? string.Empty;
+        _codexEndpointOverride = current.CodexEndpointOverride ?? string.Empty;
+        _miniMaxEndpointOverride = current.MiniMaxEndpointOverride ?? string.Empty;
+        _deepSeekEndpointOverride = current.DeepSeekEndpointOverride ?? string.Empty;
 
         SaveMiniMaxKeyCommand = new RelayCommand(SaveMiniMaxKey);
         SaveDeepSeekKeyCommand = new RelayCommand(SaveDeepSeekKey);
@@ -263,10 +294,25 @@ public sealed partial class SettingsViewModel : ObservableObject
             Theme = Theme,
             MiniMaxRegion = MiniMaxRegion,
             ShowUnknownWindows = ShowUnknownWindows,
+            ClockDisplayFormat = ClockDisplayFormat,
+            // 接口地址覆盖：空串转 null（= 用内置默认）。不并入则保存普通设置会把覆盖项清掉。
+            ClaudeEndpointOverride = ToNullIfEmpty(ClaudeEndpointOverride),
+            CodexEndpointOverride = ToNullIfEmpty(CodexEndpointOverride),
+            MiniMaxEndpointOverride = ToNullIfEmpty(MiniMaxEndpointOverride),
+            DeepSeekEndpointOverride = ToNullIfEmpty(DeepSeekEndpointOverride),
         };
 
         _settingsStore.Save(settings);
         SettingsSaved?.Invoke(this, settings);
         StatusMessage = "设置已保存";
     }
+
+    private static string? ToNullIfEmpty(string? value)
+    {
+        var trimmed = value?.Trim();
+        return string.IsNullOrEmpty(trimmed) ? null : trimmed;
+    }
 }
+
+/// <summary>日期显示格式下拉的单个选项。</summary>
+public sealed record ClockDisplayFormatOption(ClockDisplayFormat Format, string Label);

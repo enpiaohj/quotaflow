@@ -53,7 +53,7 @@ public partial class App : Application
         _themeManager.Apply(settings.Theme);
         SystemEvents.UserPreferenceChanged += OnSystemPreferenceChanged;
 
-        var providers = BuildProviders(settings.MiniMaxRegion);
+        var providers = BuildProviders(settings);
         var coordinator = new RefreshCoordinator(providers);
 
         _panelViewModel = new MainPanelViewModel(coordinator, _cache, settings);
@@ -63,24 +63,38 @@ public partial class App : Application
         _panelWindow = new MainPanelWindow(_panelViewModel);
         _panelWindow.SettingsRequested += (_, _) => OpenSettings();
 
+        // 诊断/自检：--show-panel 启动后直接展示面板且失焦不自动收起。
+        // 不带该参数时与普通启动完全一致（仅驻留托盘、点击外部自动收起）。
+        if (Array.IndexOf(e.Args, "--show-panel") >= 0)
+        {
+            _panelWindow.KeepVisibleOnDeactivate = true;
+            _panelWindow.ShowNearTray();
+        }
+
         SetupTrayIcon();
 
         // 启动后先展示缓存（已在 MainPanelViewModel 构造函数里完成），再决定是否立即后台刷新。
         _ = _panelViewModel.RefreshOnStartupIfEnabledAsync();
     }
 
-    private IEnumerable<IQuotaProvider> BuildProviders(Core.Models.MiniMaxRegion region)
+    private IEnumerable<IQuotaProvider> BuildProviders(Core.Models.AppSettings settings)
     {
-        var minimaxDomain = region == Core.Models.MiniMaxRegion.International
+        var minimaxDomain = settings.MiniMaxRegion == Core.Models.MiniMaxRegion.International
             ? MiniMaxQuotaProvider.DomainIntl
             : MiniMaxQuotaProvider.DomainCn;
 
         // 未知额度窗口是否展示由设置决定；每次查询时现读设置文件，改完设置不用重启立即生效。
+        // 接口地址覆盖在启动时捕获一次（与 MiniMax 区域一致：改完设置重启生效）。
         yield return new ClaudeQuotaProvider(_httpClient,
-            includeUnknownWindows: () => _settingsStore.Load().ShowUnknownWindows);
-        yield return new CodexQuotaProvider(_httpClient);
-        yield return new MiniMaxQuotaProvider(_httpClient, () => _credentialStore.TryRead(SettingsViewModel.MiniMaxKeyName), minimaxDomain);
-        yield return new DeepSeekBalanceProvider(_httpClient, () => _credentialStore.TryRead(SettingsViewModel.DeepSeekKeyName));
+            includeUnknownWindows: () => _settingsStore.Load().ShowUnknownWindows,
+            endpointOverride: settings.ClaudeEndpointOverride);
+        yield return new CodexQuotaProvider(_httpClient, endpointOverride: settings.CodexEndpointOverride);
+        yield return new MiniMaxQuotaProvider(_httpClient,
+            () => _credentialStore.TryRead(SettingsViewModel.MiniMaxKeyName),
+            minimaxDomain, settings.MiniMaxEndpointOverride);
+        yield return new DeepSeekBalanceProvider(_httpClient,
+            () => _credentialStore.TryRead(SettingsViewModel.DeepSeekKeyName),
+            settings.DeepSeekEndpointOverride);
     }
 
     private void SetupTrayIcon()

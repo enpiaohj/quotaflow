@@ -15,6 +15,8 @@
 
   <ItemGroup>
     <PackageReference Include="System.Drawing.Common" Version="10.0.11" />
+    <!-- DPAPI（DataProtectionScope.CurrentUser）：用于加密 settings.json，密钥本身仍存 Windows 凭据管理器。 -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
 
 </Project>

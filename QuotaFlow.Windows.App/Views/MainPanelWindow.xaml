@@ -152,9 +152,15 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="QuotaFlow" Style="{StaticResource Style.TitleText}" />
+                <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource Style.TitleText}">
+                    <Run Text="QuotaFlow" />
+                    <Run Text=" " />
+                    <Run Text="{Binding VersionText, Mode=OneWay}" FontSize="11" FontWeight="Normal"
+                         Foreground="{DynamicResource Brush.TextTertiary}" />
+                </TextBlock>
                 <TextBlock Grid.Row="1" Grid.Column="0" Text="AI 额度状态" Style="{StaticResource Style.SubtitleText}" Margin="0,2,0,0" />
 
                 <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
@@ -192,6 +198,10 @@
 
                 <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding HeaderLastUpdatedText}"
                            Style="{StaticResource Style.SubtitleText}" Margin="0,2,0,0" HorizontalAlignment="Right" />
+
+                <!-- 实时日期/时间：格式由设置"日期显示格式"决定，每秒刷新。 -->
+                <TextBlock Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Text="{Binding ClockText}"
+                           FontSize="11" Foreground="{DynamicResource Brush.TextTertiary}" Margin="0,3,0,0" />
             </Grid>
 
             <!-- 四张平台卡片，固定顺序 Claude/Codex/MiniMax/DeepSeek，尽量不滚动即可看完 -->

@@ -21,7 +21,8 @@ namespace QuotaFlow.Windows.Core.Providers;
 /// </summary>
 public sealed class ClaudeQuotaProvider : IQuotaProvider
 {
-    private const string DataSourceUrl = "https://api.anthropic.com/api/oauth/usage";
+    private const string DefaultUsageUrl = "https://api.anthropic.com/api/oauth/usage";
+    private readonly string _dataSourceUrl;
     private static readonly string[] KnownTierOrder =
         ["five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet", "seven_day_omelette"];
 
@@ -40,12 +41,14 @@ public sealed class ClaudeQuotaProvider : IQuotaProvider
 
     public string ProviderId => "claude";
 
+    /// <param name="endpointOverride">覆盖用量接口地址；空/未填时使用内置默认。</param>
     public ClaudeQuotaProvider(HttpClient httpClient, ClaudeCredentialReader? credentialReader = null,
-        Func<bool>? includeUnknownWindows = null)
+        Func<bool>? includeUnknownWindows = null, string? endpointOverride = null)
     {
         _httpClient = httpClient;
         _credentialReader = credentialReader ?? new ClaudeCredentialReader();
         _includeUnknownWindows = includeUnknownWindows ?? (() => false);
+        _dataSourceUrl = EndpointResolver.Resolve(endpointOverride, DefaultUsageUrl);
     }
 
     public async Task<ProviderSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default)
@@ -83,7 +86,7 @@ public sealed class ClaudeQuotaProvider : IQuotaProvider
 
     private async Task<ProviderSnapshot> QueryAsync(string accessToken, CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, DataSourceUrl);
+        using var request = new HttpRequestMessage(HttpMethod.Get, _dataSourceUrl);
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
         request.Headers.Add("anthropic-beta", "oauth-2025-04-20");
         request.Headers.Add("Accept", "application/json");
@@ -199,7 +202,7 @@ public sealed class ClaudeQuotaProvider : IQuotaProvider
                 State = state,
                 QuotaWindows = windows,
                 LastUpdatedAt = DateTimeOffset.UtcNow,
-                DataSource = DataSourceUrl,
+                DataSource = _dataSourceUrl,
                 ErrorCategory = ErrorCategory.None,
             };
         }
@@ -234,7 +237,7 @@ public sealed class ClaudeQuotaProvider : IQuotaProvider
         ProviderId = ProviderId,
         DisplayName = "Claude",
         State = ProviderState.NotConfigured,
-        DataSource = DataSourceUrl,
+        DataSource = _dataSourceUrl,
         ErrorCategory = ErrorCategory.NotConfigured,
         UserGuidance = "未检测到 Claude Code 本机登录，请先运行 Claude Code 并登录",
     };
@@ -244,7 +247,7 @@ public sealed class ClaudeQuotaProvider : IQuotaProvider
         ProviderId = ProviderId,
         DisplayName = "Claude",
         State = ProviderState.AuthenticationExpired,
-        DataSource = DataSourceUrl,
+        DataSource = _dataSourceUrl,
         ErrorCategory = ErrorCategory.AuthenticationExpired,
         UserGuidance = guidance,
     };
@@ -254,7 +257,7 @@ public sealed class ClaudeQuotaProvider : IQuotaProvider
         ProviderId = ProviderId,
         DisplayName = "Claude",
         State = ProviderState.ProviderError,
-        DataSource = DataSourceUrl,
+        DataSource = _dataSourceUrl,
         ErrorCategory = ErrorCategory.ResponseFormat,
         UserGuidance = guidance,
     };
@@ -264,7 +267,7 @@ public sealed class ClaudeQuotaProvider : IQuotaProvider
         ProviderId = ProviderId,
         DisplayName = "Claude",
         State = state,
-        DataSource = DataSourceUrl,
+        DataSource = _dataSourceUrl,
         ErrorCategory = category,
         UserGuidance = guidance,
     };

@@ -17,17 +17,21 @@ namespace QuotaFlow.Windows.Core.Providers;
 /// </summary>
 public sealed class CodexQuotaProvider : IQuotaProvider
 {
-    private const string DataSourceUrl = "https://chatgpt.com/backend-api/wham/usage";
+    private const string DefaultUsageUrl = "https://chatgpt.com/backend-api/wham/usage";
+    private readonly string _dataSourceUrl;
 
     private readonly HttpClient _httpClient;
     private readonly CodexCredentialReader _credentialReader;
 
     public string ProviderId => "codex";
 
-    public CodexQuotaProvider(HttpClient httpClient, CodexCredentialReader? credentialReader = null)
+    /// <param name="endpointOverride">覆盖用量接口地址；空/未填时使用内置默认。</param>
+    public CodexQuotaProvider(HttpClient httpClient, CodexCredentialReader? credentialReader = null,
+        string? endpointOverride = null)
     {
         _httpClient = httpClient;
         _credentialReader = credentialReader ?? new CodexCredentialReader();
+        _dataSourceUrl = EndpointResolver.Resolve(endpointOverride, DefaultUsageUrl);
     }
 
     public async Task<ProviderSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default)
@@ -63,7 +67,7 @@ public sealed class CodexQuotaProvider : IQuotaProvider
 
     private async Task<ProviderSnapshot> QueryAsync(string accessToken, string? accountId, CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, DataSourceUrl);
+        using var request = new HttpRequestMessage(HttpMethod.Get, _dataSourceUrl);
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
         request.Headers.Add("User-Agent", "codex-cli");
         request.Headers.Add("Accept", "application/json");
@@ -168,7 +172,7 @@ public sealed class CodexQuotaProvider : IQuotaProvider
                 State = state,
                 QuotaWindows = windows,
                 LastUpdatedAt = DateTimeOffset.UtcNow,
-                DataSource = DataSourceUrl,
+                DataSource = _dataSourceUrl,
                 ErrorCategory = ErrorCategory.None,
             };
         }
@@ -216,7 +220,7 @@ public sealed class CodexQuotaProvider : IQuotaProvider
         ProviderId = ProviderId,
         DisplayName = "Codex",
         State = ProviderState.NotConfigured,
-        DataSource = DataSourceUrl,
+        DataSource = _dataSourceUrl,
         ErrorCategory = ErrorCategory.NotConfigured,
         UserGuidance = "未检测到 Codex CLI 本机 ChatGPT 登录，请先运行 Codex CLI 并使用 ChatGPT 账号登录",
     };
@@ -226,7 +230,7 @@ public sealed class CodexQuotaProvider : IQuotaProvider
         ProviderId = ProviderId,
         DisplayName = "Codex",
         State = ProviderState.AuthenticationExpired,
-        DataSource = DataSourceUrl,
+        DataSource = _dataSourceUrl,
         ErrorCategory = ErrorCategory.AuthenticationExpired,
         UserGuidance = guidance,
     };
@@ -236,7 +240,7 @@ public sealed class CodexQuotaProvider : IQuotaProvider
         ProviderId = ProviderId,
         DisplayName = "Codex",
         State = ProviderState.ProviderError,
-        DataSource = DataSourceUrl,
+        DataSource = _dataSourceUrl,
         ErrorCategory = ErrorCategory.ResponseFormat,
         UserGuidance = guidance,
     };
@@ -246,7 +250,7 @@ public sealed class CodexQuotaProvider : IQuotaProvider
         ProviderId = ProviderId,
         DisplayName = "Codex",
         State = state,
-        DataSource = DataSourceUrl,
+        DataSource = _dataSourceUrl,
         ErrorCategory = category,
         UserGuidance = guidance,
     };

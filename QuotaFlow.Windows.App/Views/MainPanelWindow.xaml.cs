@@ -19,6 +19,12 @@ public partial class MainPanelWindow : Window
         DataContext = viewModel;
     }
 
+    /// <summary>
+    /// 诊断用途（--show-panel）：为 True 时失焦不自动隐藏，便于自动化检查面板内容。
+    /// 正常使用保持 False，点击面板外部仍会立即收起。
+    /// </summary>
+    public bool KeepVisibleOnDeactivate { get; set; }
+
     public void ShowNearTray()
     {
         PositionNearTaskbar();
@@ -77,7 +83,13 @@ public partial class MainPanelWindow : Window
         Top = top;
     }
 
-    private void OnDeactivated(object? sender, EventArgs e) => Hide();
+    private void OnDeactivated(object? sender, EventArgs e)
+    {
+        if (!KeepVisibleOnDeactivate)
+        {
+            Hide();
+        }
+    }
 
     private void OnKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {

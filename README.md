@@ -63,6 +63,8 @@ dotnet publish QuotaFlow.Windows.App/QuotaFlow.Windows.App.csproj -c Release -r 
 ### 通用安全约定
 
 - `%LOCALAPPDATA%\QuotaFlow\cache.json` 只保存展示用的百分比/重置时间等数据（`ProviderSnapshot` 模型本身没有能装 token/key 的字段），可以随意删除或分享截图，不会泄露凭据。
+- `%LOCALAPPDATA%\QuotaFlow\settings.json`（刷新间隔、主题、接口地址覆盖等非敏感配置）以 DPAPI（`DataProtectionScope.CurrentUser`）加密信封落盘：磁盘上只有 `schemaVersion` / `cipher` / `payload`，不含任何明文值。旧版明文配置首次启动会自动迁移，并保留 `settings.json.v0.bak` 快照。DPAPI 与当前 Windows 用户绑定，换用户/重装后旧文件无法解密时安全落回默认值（不覆盖原文件）。
+- 四个平台的接口地址默认内置；设置页"接口地址（高级）"可在接口变更时覆盖（同样加密存储），留空即用内置默认。
 - HTTP 请求失败（401/403/429/超时/DNS/TLS/响应格式变化）会被分类为不同的错误状态展示给用户，错误文案不包含 `Authorization`、`Bearer` 或原始响应体。
 - 发布产物（`dotnet publish` 输出）不包含任何密钥、凭据、缓存或日志文件——这些都只在运行时生成于 `%LOCALAPPDATA%\QuotaFlow`。
 
@@ -79,3 +81,4 @@ Claude / Codex / MiniMax 三个平台的接口路径、请求头和响应字段�
 1. **非公开 OAuth 用量接口的兼容性**：Claude 的 `/api/oauth/usage` 和 Codex 的 `/backend-api/wham/usage` 都不是官方文档化接口，未来可能变化。当前用防御式解析（未知字段展示、缺失字段隐藏、解析失败归类为"服务异常"）作为缓冲，但接口如果发生结构性变化（不只是加字段）仍需要更新代码。
 2. **托盘弹出面板的定位是启发式的**：根据任务栏所在屏幕边缘估算弹出位置，不是通过 Shell 层面精确查询托盘图标坐标（`Shell_NotifyIconGetRect`），多显示器或非常规任务栏位置下可能不是像素级贴合。
 3. **视觉效果是"手写 Fluent 风格"而非真正的 Mica/Acrylic 材质**：用圆角 + 阴影 + 浅色/深色双色板模拟 Windows 11 视觉语言，没有引入 WinUI3/WPF-UI 之类的库来获取系统级亚克力效果，符合"不为追新技术引入复杂架构"的要求，但视觉保真度不是像素级还原系统组件。
+4. **DPAPI 与当前 Windows 用户绑定**：`settings.json` 的加密密钥派生自当前 Windows 用户，换账号登录或系统重装后旧文件无法解密——应用会安全落回默认值并保留原文件（不覆盖、不报错），重新在设置页保存即可。配置文件本身不含任何密钥，可接受。

@@ -1,14 +1,27 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using QuotaFlow.Windows.Core.Models;
 
 namespace QuotaFlow.Windows.Core.Services;
 
 /// <summary>
-/// 读写非敏感应用设置（刷新间隔、主题、开机启动开关等）。不涉及任何密钥，
-/// 因此直接落地为普通 JSON 文件即可，不需要走 <see cref="SecureCredentialStore"/>。
+/// 读写非敏感应用设置（刷新间隔、主题、开机启动开关、接口地址覆盖等）。不涉及任何密钥——
+/// 密钥始终只走 <see cref="SecureCredentialStore"/>（Windows 凭据管理器）。但设置仍以 DPAPI
+/// 加密信封落地（文档硬性要求：配置不得明文内嵌/落盘），并用 schemaVersion 记录格式版本：
+/// 旧版本明文/旧信封加载时自动迁移、保留旧文件快照（settings.json.vN.bak）后重写为当前版本。
 /// </summary>
 public sealed class AppSettingsStore
 {
+    /// <summary>
+    /// 当前配置 schema 版本。只增不减；当"新增字段无法靠模型默认值平滑迁移"时才 +1 并补迁移逻辑
+    /// （纯新增可空/带默认值字段不改变旧文件的可读性，无需 bump）。
+    /// </summary>
+    private const int CurrentSchemaVersion = 1;
+
+    /// <summary>本实现使用的加密方案标识；未来换算法时用于区分。</summary>
+    private const string CipherName = "dpapi-user-v1";
+
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
@@ -36,26 +49,153 @@ public sealed class AppSettingsStore
             return new AppSettings();
         }
 
+        string text;
         try
         {
-            var json = File.ReadAllText(_settingsPath);
-            return JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
+            text = File.ReadAllText(_settingsPath);
         }
-        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return new AppSettings();
         }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(text);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                doc.RootElement.TryGetProperty("schemaVersion", out _))
+            {
+                return LoadEnvelope(text);
+            }
+        }
+        catch (JsonException)
+        {
+            // 既不是合法 JSON，也不可能是旧明文——按损坏处理，落回默认。
+            return new AppSettings();
+        }
+
+        return MigrateLegacyPlaintext(text);
     }
 
-    public void Save(AppSettings settings)
+    private AppSettings LoadEnvelope(string envelopeJson)
+    {
+        SettingsEnvelope? envelope;
+        try
+        {
+            envelope = JsonSerializer.Deserialize<SettingsEnvelope>(envelopeJson, JsonOptions);
+        }
+        catch (JsonException)
+        {
+            return new AppSettings();
+        }
+
+        if (envelope is null || !string.Equals(envelope.Cipher, CipherName, StringComparison.Ordinal) ||
+            string.IsNullOrEmpty(envelope.Payload))
+        {
+            // 未知加密方案或信封缺 payload：无法解密，落回默认（保留原文件供排查）。
+            return new AppSettings();
+        }
+
+        string plainJson;
+        try
+        {
+            var cipherBytes = Convert.FromBase64String(envelope.Payload);
+            var plainBytes = ProtectedData.Unprotect(cipherBytes, null, DataProtectionScope.CurrentUser);
+            plainJson = Encoding.UTF8.GetString(plainBytes);
+        }
+        catch (Exception ex) when (ex is FormatException or CryptographicException)
+        {
+            // payload 不是合法 base64 或不是当前用户可解密的 DPAPI 密文：落回默认。
+            return new AppSettings();
+        }
+
+        AppSettings settings;
+        try
+        {
+            settings = JsonSerializer.Deserialize<AppSettings>(plainJson, JsonOptions) ?? new AppSettings();
+        }
+        catch (JsonException)
+        {
+            return new AppSettings();
+        }
+
+        if (envelope.SchemaVersion < CurrentSchemaVersion)
+        {
+            // 旧 schema：先备份旧文件快照，再以当前版本重写。
+            TryBackup($"{_settingsPath}.v{envelope.SchemaVersion}.bak");
+            SaveCore(settings);
+        }
+
+        return settings;
+    }
+
+    /// <summary>
+    /// 当前已部署的旧版明文 JSON（v1.0.0~1.0.2 都是这种格式，无 schemaVersion）。识别到就备份成
+    /// settings.json.v0.bak 并升级为加密信封；新增字段缺失时由模型默认初始化器补默认值。
+    /// </summary>
+    private AppSettings MigrateLegacyPlaintext(string plainJson)
+    {
+        AppSettings settings;
+        try
+        {
+            settings = JsonSerializer.Deserialize<AppSettings>(plainJson, JsonOptions) ?? new AppSettings();
+        }
+        catch (JsonException)
+        {
+            return new AppSettings();
+        }
+
+        TryBackup($"{_settingsPath}.v0.bak");
+        SaveCore(settings);
+        return settings;
+    }
+
+    public void Save(AppSettings settings) => SaveCore(settings);
+
+    private void SaveCore(AppSettings settings)
     {
         try
         {
+            var dir = Path.GetDirectoryName(_settingsPath);
+            if (!string.IsNullOrEmpty(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
             var json = JsonSerializer.Serialize(settings, JsonOptions);
-            File.WriteAllText(_settingsPath, json);
+            var encrypted = ProtectedData.Protect(Encoding.UTF8.GetBytes(json), null, DataProtectionScope.CurrentUser);
+
+            var envelope = new SettingsEnvelope
+            {
+                SchemaVersion = CurrentSchemaVersion,
+                Cipher = CipherName,
+                Payload = Convert.ToBase64String(encrypted),
+            };
+
+            File.WriteAllText(_settingsPath, JsonSerializer.Serialize(envelope, JsonOptions));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CryptographicException)
+        {
+            // 写失败静默降级：与原实现一致，绝不让保存设置拖垮主流程。
+        }
+    }
+
+    private void TryBackup(string backupPath)
+    {
+        try
+        {
+            File.Copy(_settingsPath, backupPath, overwrite: true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
         }
+    }
+
+    /// <summary>磁盘上的信封结构。字段名按 Web 默认序列化为 camelCase（schemaVersion/cipher/payload）。</summary>
+    private sealed class SettingsEnvelope
+    {
+        public int SchemaVersion { get; set; }
+        public string? Cipher { get; set; }
+        public string? Payload { get; set; }
     }
 }

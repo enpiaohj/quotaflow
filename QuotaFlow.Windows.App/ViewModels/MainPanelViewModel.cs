@@ -25,10 +25,21 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
 
     [ObservableProperty] private bool _isRefreshingAll;
     [ObservableProperty] private string _headerLastUpdatedText = string.Empty;
+    [ObservableProperty] private string _clockText = string.Empty;
 
     public IAsyncRelayCommand RefreshAllCommand { get; }
     public IRelayCommand OpenSettingsCommand { get; }
     public IRelayCommand ExitCommand { get; }
+
+    /// <summary>面板标题行产品名后的版本号（如 "v1.0.3"）。与设置页 About 同源：程序集版本，避免手工改 UI 文本造成漂移。</summary>
+    public string VersionText
+    {
+        get
+        {
+            var version = typeof(MainPanelViewModel).Assembly.GetName().Version;
+            return version is null ? string.Empty : $"v{version.ToString(3)}";
+        }
+    }
 
     public event EventHandler? SettingsRequested;
     public event EventHandler? ExitRequested;
@@ -148,6 +159,9 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
         HeaderLastUpdatedText = _lastRefreshAllAt is { } refreshedAt
             ? FormatRelative(now - refreshedAt)
             : string.Empty;
+
+        // 面板顶部实时时钟：每秒刷新，格式由设置"日期显示格式"决定（UpdateSettings 后即时生效）。
+        ClockText = ClockFormatter.Format(DateTimeOffset.Now, _settings.ClockDisplayFormat);
     }
 
     private static string FormatRelative(TimeSpan delta) => delta switch
