@@ -386,4 +386,94 @@ public sealed class AppSettingsStoreTests : IDisposable
 
         Assert.Equal(5, settings.AutoRefreshIntervalMinutes);
     }
+
+    [Fact]
+    public void Load_UnknownWindowPresentationMode_FallsBackToTrayPopup()
+    {
+        // 模拟配置文件里存了一个当前版本不认识的显示模式枚举值（未来版本新增的模式，
+        // 或者文件被手改坏）——不能让窗口带着一个未定义的模式启动。
+        var legacy = new AppSettings
+        {
+            WindowDisplay = new WindowDisplaySettings { Mode = (WindowPresentationMode)99 },
+        };
+        _store.Save(legacy);
+
+        var loaded = _store.Load();
+
+        Assert.Equal(WindowPresentationMode.TrayPopup, loaded.WindowDisplay.Mode);
+    }
+
+    [Fact]
+    public void SaveThenLoad_RoundTripsWindowDisplaySettings()
+    {
+        var original = new AppSettings
+        {
+            WindowDisplay = new WindowDisplaySettings
+            {
+                Mode = WindowPresentationMode.DesktopPanel,
+                IsAlwaysOnTop = false,
+                IsPositionLocked = true,
+                IsCompactLayout = true,
+                Opacity = 0.85,
+                Material = WindowMaterial.Acrylic,
+                SnapToEdges = false,
+                RestoreLastModeOnStartup = true,
+                EnhanceReadabilityOnHover = false,
+                FloatingPlacement = new SavedWindowPlacement
+                {
+                    MonitorDeviceName = "\\\\.\\DISPLAY1",
+                    LeftDip = 100,
+                    TopDip = 200,
+                    WidthDip = 420,
+                    HeightDip = 560,
+                    SavedDpiX = 144,
+                    SavedDpiY = 144,
+                    LastUpdatedAt = DateTimeOffset.Parse("2026-08-28T10:00:00Z"),
+                },
+                DesktopPlacement = new SavedWindowPlacement
+                {
+                    MonitorDeviceName = "\\\\.\\DISPLAY2",
+                    LeftDip = 50,
+                    TopDip = 60,
+                    WidthDip = 320,
+                    HeightDip = 180,
+                },
+            },
+        };
+
+        _store.Save(original);
+        var loaded = _store.Load();
+
+        var w = loaded.WindowDisplay;
+        Assert.Equal(WindowPresentationMode.DesktopPanel, w.Mode);
+        Assert.False(w.IsAlwaysOnTop);
+        Assert.True(w.IsPositionLocked);
+        Assert.True(w.IsCompactLayout);
+        Assert.Equal(0.85, w.Opacity);
+        Assert.Equal(WindowMaterial.Acrylic, w.Material);
+        Assert.False(w.SnapToEdges);
+        Assert.True(w.RestoreLastModeOnStartup);
+        Assert.False(w.EnhanceReadabilityOnHover);
+        Assert.NotNull(w.FloatingPlacement);
+        Assert.Equal("\\\\.\\DISPLAY1", w.FloatingPlacement!.MonitorDeviceName);
+        Assert.Equal(100, w.FloatingPlacement.LeftDip);
+        Assert.Equal(144, w.FloatingPlacement.SavedDpiX);
+        Assert.NotNull(w.DesktopPlacement);
+        Assert.Equal("\\\\.\\DISPLAY2", w.DesktopPlacement!.MonitorDeviceName);
+    }
+
+    [Fact]
+    public void Load_MissingFile_WindowDisplayDefaultsAreSensible()
+    {
+        var settings = _store.Load();
+
+        Assert.Equal(WindowPresentationMode.TrayPopup, settings.WindowDisplay.Mode);
+        Assert.True(settings.WindowDisplay.IsAlwaysOnTop);
+        Assert.False(settings.WindowDisplay.IsPositionLocked);
+        Assert.False(settings.WindowDisplay.IsCompactLayout);
+        Assert.Equal(1.0, settings.WindowDisplay.Opacity);
+        Assert.Equal(WindowMaterial.System, settings.WindowDisplay.Material);
+        Assert.Null(settings.WindowDisplay.FloatingPlacement);
+        Assert.Null(settings.WindowDisplay.DesktopPlacement);
+    }
 }

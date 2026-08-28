@@ -4,7 +4,7 @@
         xmlns:conv="clr-namespace:QuotaFlow.Windows.App.Converters"
         xmlns:vm="clr-namespace:QuotaFlow.Windows.App.ViewModels"
         Title="QuotaFlow"
-        Width="420" Height="560" MinHeight="360"
+        Width="420" Height="560" MinHeight="120" MinWidth="200"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ShowInTaskbar="False" Topmost="True" ResizeMode="NoResize"
         WindowStartupLocation="Manual"
@@ -41,8 +41,18 @@
             </Style.Triggers>
         </Style>
 
+        <!-- 紧凑布局（设置页/桌面看板模式默认开启）：卡片内边距收窄，不重排字段——
+             文档要求"标准/紧凑"共用同一套数据模板，只改间距密度，不是两套完全独立的 UI。 -->
+        <Style x:Key="Style.Card.Compactable" TargetType="Border" BasedOn="{StaticResource Style.Card}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding DataContext.IsCompactLayout, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                    <Setter Property="Padding" Value="10,7" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <DataTemplate x:Key="ProviderCardTemplate" DataType="{x:Type vm:ProviderCardViewModel}">
-            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,8" Visibility="{Binding Visibility}">
+            <Border Style="{StaticResource Style.Card.Compactable}" Margin="0,0,0,8" Visibility="{Binding Visibility}">
                 <StackPanel>
                     <!-- 卡片头部：状态点 + 名称 + 状态文案 + 排序箭头 + 展开按钮 -->
                     <Grid>
@@ -175,10 +185,18 @@
         </DataTemplate>
     </Window.Resources>
 
-    <Border Style="{StaticResource Style.PanelShell}">
+    <Grid>
+        <!-- 背景层：独立于内容层的不透明度，"显示模式"里的透明度设置只淡化这一层
+             （背景色/边框/阴影），文字/图标/进度条所在的内容层永远保持 Opacity=1，
+             不会因为背景变淡而跟着变得难以辨认（文档 §8.2）。 -->
+        <Border x:Name="PanelBackgroundLayer" Style="{StaticResource Style.PanelShell}" />
+
         <DockPanel Margin="16,14,16,12">
-            <!-- 顶部区域 -->
-            <Grid DockPanel.Dock="Top" Margin="0,0,0,10">
+            <!-- 顶部区域：整块区域是拖动手柄（悬浮/桌面看板模式下 IsDraggable=true 时生效），
+                 按钮位于其上层，Button 会在 MouseLeftButtonDown 时自行标记 Handled，
+                 点击按钮不会触发拖动。 -->
+            <Grid DockPanel.Dock="Top" Margin="0,0,0,10" Background="Transparent"
+                  MouseLeftButtonDown="OnHeaderMouseLeftButtonDown">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
@@ -198,6 +216,13 @@
                 <TextBlock Grid.Row="1" Grid.Column="0" Text="AI 额度状态" Style="{StaticResource Style.SubtitleText}" Margin="0,2,0,0" />
 
                 <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
+                    <!-- 显示模式：托盘弹出 → 悬浮 → 桌面看板 → 托盘弹出，循环切换；图标随当前模式变化，
+                         Tooltip 说明点击后会切到哪个模式。更细的每模式设置（置顶/锁定位置/透明度/
+                         材质/紧凑布局）在设置页"显示与窗口"里调。 -->
+                    <Button Content="{Binding ModeGlyph}" FontSize="13" Command="{Binding CycleDisplayModeCommand}"
+                            AutomationProperties.AutomationId="CycleDisplayModeButton"
+                            ToolTip="{Binding ModeTooltip}" Margin="0,0,4,0"
+                            Style="{StaticResource Style.IconButton}" />
                     <!-- 固定面板：固定后点击面板外部不再自动收起，方便一边看额度一边操作其它窗口。
                          托盘图标单击/双击/Esc 依然能正常关闭，固定只挡"点外部失焦"这一种收起方式。 -->
                     <Button Content="&#128204;" FontSize="12" Command="{Binding TogglePinCommand}"
@@ -291,5 +316,5 @@
                 </StackPanel>
             </ScrollViewer>
         </DockPanel>
-    </Border>
+    </Grid>
 </Window>

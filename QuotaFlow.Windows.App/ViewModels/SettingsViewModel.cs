@@ -26,6 +26,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     private readonly AppSettingsStore _settingsStore;
     private readonly SecureCredentialStore _credentialStore;
     private readonly LocalCache _cache;
+    private readonly IWindowPresentationCoordinator _presentation;
 
     /// <summary>
     /// 保存设置后用新设置去注册全局热键（返回是否注册成功），由组合根（App.xaml.cs）注入真正的
@@ -136,6 +137,74 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public IRelayCommand AddCustomPlatformCommand { get; }
     public IRelayCommand AddOpenCodeGoTemplateCommand { get; }
+
+    // ---- 显示与窗口（文档"显示模式开发提示词"）----
+    // 这一组全部直接读写 IWindowPresentationCoordinator，不走本页"编辑草稿 + 点保存"那一套——
+    // 跟面板顶部的固定/显示语义切换一样，属于"改了就该立刻看到效果"的设置，走批量保存反而会有
+    // "面板已经变了，设置页显示的还是旧值/保存时把面板刚变的状态覆盖回去"的撕裂风险。
+    // _presentation.StateChanged 统一转发成 OnPropertyChanged()（见构造函数），任何一处改动
+    // （包括面板顶部的模式切换按钮）都会让这里的绑定跟着刷新。
+
+    public WindowPresentationMode WindowMode => _presentation.CurrentMode;
+
+    public bool WindowAlwaysOnTop
+    {
+        get => _presentation.IsAlwaysOnTop;
+        set => _presentation.SetAlwaysOnTop(value);
+    }
+
+    public bool WindowPositionLocked
+    {
+        get => _presentation.IsPositionLocked;
+        set => _presentation.SetPositionLocked(value);
+    }
+
+    public bool WindowCompactLayout
+    {
+        get => _presentation.IsCompactLayout;
+        set => _presentation.SetCompactLayout(value);
+    }
+
+    /// <summary>0.7–1.0，滑块步进 0.05；托盘弹出模式下这个值不生效（该模式恒为不透明）。</summary>
+    public double WindowOpacity
+    {
+        get => _presentation.Opacity;
+        set => _presentation.SetOpacity(value);
+    }
+
+    public WindowMaterial WindowMaterial
+    {
+        get => _presentation.Material;
+        set => _presentation.SetMaterial(value);
+    }
+
+    public bool WindowSnapToEdges
+    {
+        get => _presentation.SnapToEdges;
+        set => _presentation.SetSnapToEdges(value);
+    }
+
+    public bool WindowRestoreLastModeOnStartup
+    {
+        get => _presentation.RestoreLastModeOnStartup;
+        set => _presentation.SetRestoreLastModeOnStartup(value);
+    }
+
+    public bool WindowEnhanceReadabilityOnHover
+    {
+        get => _presentation.EnhanceReadabilityOnHover;
+        set => _presentation.SetEnhanceReadabilityOnHover(value);
+    }
+
+    /// <summary>当前系统/窗口是否具备真正的 DWM Mica/Acrylic 能力——不支持时材质选项仍可选，
+    /// 但会自动降级为纯色近似（见 WindowMaterialService 上的说明），这里只用来在设置页给一句
+    /// 提示，不隐藏选项本身（隐藏了用户会以为这个功能不存在，而不是"这台机器暂时用不了"）。</summary>
+    public bool IsMaterialFullySupported => WindowMaterialService.IsMaterialSupported();
+
+    public IAsyncRelayCommand EnterTrayModeCommand { get; }
+    public IAsyncRelayCommand EnterFloatingModeCommand { get; }
+    public IAsyncRelayCommand EnterDesktopPanelModeCommand { get; }
+    public IRelayCommand RestoreDefaultWindowPositionCommand { get; }
 
     // 接口地址覆盖（各平台分组下的"接口地址（可选）"）：空串 = 使用内置默认。保存时转成 null 落盘。
     [ObservableProperty]
@@ -258,14 +327,21 @@ public sealed partial class SettingsViewModel : ObservableObject
     public IAsyncRelayCommand ToggleRevealDeepSeekKeyCommand { get; }
 
     public SettingsViewModel(AppSettingsStore settingsStore, SecureCredentialStore credentialStore, LocalCache cache,
-        AppSettings current, Func<string, Task<IdentityVerificationResult>>? verifyIdentity = null,
+        AppSettings current, IWindowPresentationCoordinator presentation,
+        Func<string, Task<IdentityVerificationResult>>? verifyIdentity = null,
         Func<AppSettings, bool>? applyHotkeySettings = null)
     {
         _settingsStore = settingsStore;
         _credentialStore = credentialStore;
         _cache = cache;
+        _presentation = presentation;
         _verifyIdentity = verifyIdentity ?? IdentityVerifier.VerifyAsync;
         _applyHotkeySettings = applyHotkeySettings ?? (_ => true);
+
+        // 面板顶部模式切换按钮、或另一个已打开的设置窗口（理论上不会同时开两个，防御性处理）
+        // 改了显示设置时，这里跟着刷新——用空属性名让 WPF 把绑定到本 ViewModel 的所有属性都
+        // 重新拉取一遍，不用为"显示与窗口"那十来个属性逐个手写 NotifyPropertyChangedFor。
+        _presentation.StateChanged += (_, _) => OnPropertyChanged(string.Empty);
 
         _autoRefreshIntervalMinutes = current.AutoRefreshIntervalMinutes;
         _refreshOnStartup = current.RefreshOnStartup;
@@ -307,6 +383,10 @@ public sealed partial class SettingsViewModel : ObservableObject
         ToggleRevealDeepSeekKeyCommand = new AsyncRelayCommand(ToggleRevealDeepSeekKeyAsync);
         AddCustomPlatformCommand = new RelayCommand(AddCustomPlatform);
         AddOpenCodeGoTemplateCommand = new RelayCommand(AddOpenCodeGoTemplate);
+        EnterTrayModeCommand = new AsyncRelayCommand(_presentation.EnterTrayPopupAsync);
+        EnterFloatingModeCommand = new AsyncRelayCommand(_presentation.EnterFloatingAsync);
+        EnterDesktopPanelModeCommand = new AsyncRelayCommand(_presentation.EnterDesktopPanelAsync);
+        RestoreDefaultWindowPositionCommand = new RelayCommand(_presentation.RestoreDefaultPosition);
 
         // 自定义平台行：已保存的定义逐条加载成可编辑行（防御性去重——正常写入路径不会产生
         // 重复 Id，但不排除配置文件被手工改坏）。

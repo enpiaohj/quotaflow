@@ -169,7 +169,18 @@ public sealed class AppSettingsStore
             migratedAny = true;
         }
 
-        if (!migratedAny)
+        // 显示模式枚举值校验：配置损坏、或来自更新版本引入了这个版本不认识的新枚举成员时，
+        // System.Text.Json 默认会把裸整数原样塞进枚举字段（不会因为不是已定义成员就报错），
+        // 静默留着一个未定义的模式值可能让窗口进入无法预期的状态。文档 §11 要求安全回退到
+        // TrayPopup，这里做校验。
+        var windowDisplay = settings.WindowDisplay;
+        var invalidMode = !Enum.IsDefined(windowDisplay.Mode);
+        if (invalidMode)
+        {
+            windowDisplay.Mode = WindowPresentationMode.TrayPopup;
+        }
+
+        if (!migratedAny && !invalidMode)
         {
             return;
         }

@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using QuotaFlow.Windows.App.Services;
 using QuotaFlow.Windows.Core.Models;
 using QuotaFlow.Windows.Core.Providers;
 using QuotaFlow.Windows.Core.Services;
@@ -20,6 +21,7 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
     private readonly LocalCache _cache;
     private readonly AppSettingsStore _settingsStore;
     private readonly Func<AppSettings, IEnumerable<IQuotaProvider>> _providerFactory;
+    private readonly IWindowPresentationCoordinator _presentation;
     private AppSettings _settings;
     private readonly DispatcherTimer _tickTimer;
     private DispatcherTimer? _autoRefreshTimer;
@@ -65,6 +67,32 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
 
     public IRelayCommand TogglePinCommand { get; }
 
+    /// <summary>当前窗口显示模式（托盘弹出/悬浮/桌面看板），转发自 <see cref="IWindowPresentationCoordinator"/>。
+    /// XAML 里的 Esc 处理、紧凑布局绑定都读这个/<see cref="IsCompactLayout"/>。</summary>
+    public WindowPresentationMode CurrentMode => _presentation.CurrentMode;
+
+    /// <summary>是否使用紧凑布局（卡片内边距收窄），由协调器统一管理——桌面看板模式首次进入时
+    /// 默认开启，用户也可以在任意模式下自行在设置页调整。</summary>
+    public bool IsCompactLayout => _presentation.IsCompactLayout;
+
+    /// <summary>顶部"显示模式"按钮上的图标，跟随当前模式变化：📌托盘 / 🗗悬浮 / 🖥桌面看板。</summary>
+    public string ModeGlyph => CurrentMode switch
+    {
+        WindowPresentationMode.Floating => "\U0001FA9F",
+        WindowPresentationMode.DesktopPanel => "\U0001F5A5",
+        _ => "\U0001F4CC",
+    };
+
+    /// <summary>说明点击后会切到哪个模式（托盘 → 悬浮 → 桌面看板 → 托盘，循环）。</summary>
+    public string ModeTooltip => CurrentMode switch
+    {
+        WindowPresentationMode.TrayPopup => "当前：托盘弹出，点击切换为悬浮窗口",
+        WindowPresentationMode.Floating => "当前：悬浮窗口，点击切换为桌面看板",
+        _ => "当前：桌面看板，点击切换回托盘弹出",
+    };
+
+    public IAsyncRelayCommand CycleDisplayModeCommand { get; }
+
     /// <summary>面板标题行产品名后的版本号（如 "v1.0.3"）。与设置页 About 同源：程序集版本，避免手工改 UI 文本造成漂移。</summary>
     public string VersionText
     {
@@ -83,18 +111,25 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
         LocalCache cache,
         AppSettingsStore settingsStore,
         AppSettings initialSettings,
-        Func<AppSettings, IEnumerable<IQuotaProvider>> providerFactory)
+        Func<AppSettings, IEnumerable<IQuotaProvider>> providerFactory,
+        IWindowPresentationCoordinator presentation)
     {
         _coordinator = coordinator;
         _cache = cache;
         _settingsStore = settingsStore;
         _settings = initialSettings;
         _providerFactory = providerFactory;
+        _presentation = presentation;
         _displaySemantic = initialSettings.QuotaDisplaySemantic;
+
+        // 协调器状态变化（模式切换、置顶/紧凑布局等任一设置改变）都统一转发成这几个只读属性的
+        // PropertyChanged，绑定到 XAML 的 ModeGlyph/ModeTooltip/IsCompactLayout 会自动刷新。
+        _presentation.StateChanged += OnPresentationStateChanged;
 
         RefreshAllCommand = new AsyncRelayCommand(RefreshAllAsync);
         OpenSettingsCommand = new RelayCommand(() => SettingsRequested?.Invoke(this, EventArgs.Empty));
         ExitCommand = new RelayCommand(() => ExitRequested?.Invoke(this, EventArgs.Empty));
+        CycleDisplayModeCommand = new AsyncRelayCommand(CycleDisplayModeAsync);
         // 先于下面的 ApplyPlatformOrder 构造：后者在任何卡片顺序变化后都会刷新这两个命令的
         // CanExecute（首/末位禁用对应箭头），如果晚于该调用赋值，ctor 里就会先撞上空引用。
         MoveCardUpCommand = new RelayCommand<ProviderCardViewModel>(c => MoveCard(c, -1),
@@ -378,9 +413,26 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
         _ => (_settings.CustomPlatforms ?? []).FirstOrDefault(p => p.Id == providerId)?.Name ?? providerId,
     };
 
+    private void OnPresentationStateChanged(object? sender, EventArgs e)
+    {
+        OnPropertyChanged(nameof(CurrentMode));
+        OnPropertyChanged(nameof(IsCompactLayout));
+        OnPropertyChanged(nameof(ModeGlyph));
+        OnPropertyChanged(nameof(ModeTooltip));
+    }
+
+    /// <summary>顶部按钮：托盘弹出 → 悬浮 → 桌面看板 → 托盘弹出，循环切换。</summary>
+    private Task CycleDisplayModeAsync() => CurrentMode switch
+    {
+        WindowPresentationMode.TrayPopup => _presentation.EnterFloatingAsync(),
+        WindowPresentationMode.Floating => _presentation.EnterDesktopPanelAsync(),
+        _ => _presentation.EnterTrayPopupAsync(),
+    };
+
     public void Dispose()
     {
         _tickTimer.Stop();
         _autoRefreshTimer?.Stop();
+        _presentation.StateChanged -= OnPresentationStateChanged;
     }
 }

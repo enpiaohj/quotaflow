@@ -133,5 +133,12 @@ public sealed class AppSettings
     /// </summary>
     public string HotkeyKey { get; set; } = "Z";
 
+    /// <summary>
+    /// 窗口显示模式相关的独立状态（模式本身 + 置顶/锁定/紧凑/透明度/材质等）。纯新增字段，
+    /// 默认构造出的 <see cref="WindowDisplaySettings"/> 本身已经是合理默认值（TrayPopup +
+    /// 置顶 + 标准布局 + 100% 不透明），不 bump schemaVersion。
+    /// </summary>
+    public WindowDisplaySettings WindowDisplay { get; set; } = new();
+
     public static readonly int[] AllowedRefreshIntervals = [5, 10, 15, 30];
 }

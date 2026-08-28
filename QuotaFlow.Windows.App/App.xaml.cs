@@ -23,6 +23,7 @@ public partial class App : Application
     private IntPtr _trayIconHandle;
     private MainPanelWindow? _panelWindow;
     private MainPanelViewModel? _panelViewModel;
+    private IWindowPresentationCoordinator _presentation = null!;
     private readonly ThemeManager _themeManager = new();
     private AppSettingsStore _settingsStore = null!;
     private SecureCredentialStore _credentialStore = null!;
@@ -59,12 +60,28 @@ public partial class App : Application
         var providers = BuildProviders(settings);
         var coordinator = new RefreshCoordinator(providers);
 
-        _panelViewModel = new MainPanelViewModel(coordinator, _cache, _settingsStore, settings, BuildProviders);
+        // 三者环形依赖（窗口需要 ViewModel、ViewModel 需要显示模式协调器、协调器需要窗口）
+        // 用"窗口先建、ViewModel 随后经 AttachViewModel 挂上"打破，详见 MainPanelWindow 的
+        // 无参构造函数上的说明。
+        _panelWindow = new MainPanelWindow();
+        _presentation = new WindowPresentationCoordinator(_panelWindow, _settingsStore,
+            loadFullSettings: () => _settingsStore.Load(),
+            persistFullSettings: s => _settingsStore.Save(s));
+
+        _panelViewModel = new MainPanelViewModel(coordinator, _cache, _settingsStore, settings, BuildProviders, _presentation);
         _panelViewModel.SettingsRequested += (_, _) => OpenSettings();
         _panelViewModel.ExitRequested += (_, _) => Shutdown();
 
-        _panelWindow = new MainPanelWindow(_panelViewModel);
+        _panelWindow.AttachViewModel(_panelViewModel);
         _panelWindow.SettingsRequested += (_, _) => OpenSettings();
+        // 拖动结束（松开鼠标）后存盘一次——不是每个像素都写，只在这个时机存。
+        _panelWindow.DragCompleted += (_, _) => _presentation.PersistCurrentPlacement();
+
+        // 按设置里"启动后恢复上次模式"决定这次用什么模式初始化窗口属性（只重新配置窗口，
+        // 不改变可见性——RestoreLastModeAsync 本身是同步实现的 Task.CompletedTask 包装，
+        // 这里安全地阻塞等待，不会真的产生异步让步或死锁）。必须在下面的展示分支之前调用，
+        // 否则 TrayPopup 的默认配置会覆盖掉这里恢复出来的悬浮/桌面看板位置。
+        _presentation.RestoreLastModeAsync().GetAwaiter().GetResult();
 
         // 诊断/自检：--show-panel 启动后直接展示面板且失焦不自动收起。
         var isDiagnosticShow = Array.IndexOf(e.Args, "--show-panel") >= 0;
@@ -276,7 +293,7 @@ public partial class App : Application
 
         var currentSettings = _settingsStore.Load();
         var settingsViewModel = new SettingsViewModel(_settingsStore, _credentialStore, _cache, currentSettings,
-            applyHotkeySettings: ApplyHotkeySettings);
+            _presentation, applyHotkeySettings: ApplyHotkeySettings);
         settingsViewModel.SettingsSaved += (_, newSettings) =>
         {
             _themeManager.Apply(newSettings.Theme);

@@ -9,6 +9,7 @@
 
     <Window.Resources>
         <conv:EnumEqualsConverter x:Key="EnumEquals" />
+        <conv:InverseBooleanToVisibilityConverter x:Key="InverseBoolToVis" />
         <Style x:Key="SectionTitle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="13" />
             <Setter Property="FontWeight" Value="SemiBold" />
@@ -149,6 +150,91 @@
                               SelectedValue="{Binding ClockDisplayFormat}" />
                     <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
                                Text="下拉中的每个选项都展示该格式的实时效果，选项含义一目了然，选中后立即应用到面板顶部的时钟。" />
+                </StackPanel>
+            </Border>
+
+            <!-- 显示与窗口：这一整卡都是"改了立即生效"，不受下方"保存设置"按钮控制
+                 （跟托盘图标固定/已用剩余切换是同一类即时设置），所以卡片内没有重复的保存按钮。 -->
+            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
+                <StackPanel>
+                    <TextBlock Text="显示与窗口" Style="{StaticResource SectionTitle}" />
+
+                    <TextBlock Text="显示模式" Style="{StaticResource FieldLabel}" />
+                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                        <Button Content="托盘弹出" Style="{StaticResource Style.SecondaryButton}" Margin="0,0,8,0"
+                                AutomationProperties.AutomationId="EnterTrayModeButton"
+                                Command="{Binding EnterTrayModeCommand}" />
+                        <Button Content="悬浮窗口" Style="{StaticResource Style.SecondaryButton}" Margin="0,0,8,0"
+                                AutomationProperties.AutomationId="EnterFloatingModeButton"
+                                Command="{Binding EnterFloatingModeCommand}" />
+                        <Button Content="桌面看板" Style="{StaticResource Style.SecondaryButton}"
+                                AutomationProperties.AutomationId="EnterDesktopPanelModeButton"
+                                Command="{Binding EnterDesktopPanelModeCommand}" />
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap">
+                        <Run Text="托盘弹出：点击托盘图标才出现，点外部自动收起（原有行为）。悬浮窗口/桌面看板：常驻显示、可拖动、点外部不收起，位置和大小按显示器分别记住。当前模式：" />
+                        <Run Text="{Binding WindowMode, Mode=OneWay}" FontWeight="SemiBold" />
+                    </TextBlock>
+
+                    <Border Height="1" Background="{DynamicResource Brush.Divider}" Margin="0,12,0,10" />
+
+                    <CheckBox Content="始终置顶" IsChecked="{Binding WindowAlwaysOnTop, Mode=TwoWay}"
+                              AutomationProperties.AutomationId="WindowAlwaysOnTopCheckBox" />
+                    <TextBlock Style="{StaticResource StatusLabel}" Margin="0,2,0,8" TextWrapping="Wrap"
+                               Text="仅对悬浮窗口/桌面看板生效；托盘弹出面板始终置顶，不受此项影响。" />
+
+                    <CheckBox Content="锁定位置（锁定后不能拖动）" IsChecked="{Binding WindowPositionLocked, Mode=TwoWay}"
+                               AutomationProperties.AutomationId="WindowPositionLockedCheckBox" Margin="0,0,0,8" />
+
+                    <CheckBox Content="紧凑布局" IsChecked="{Binding WindowCompactLayout, Mode=TwoWay}"
+                               AutomationProperties.AutomationId="WindowCompactLayoutCheckBox" Margin="0,0,0,2" />
+                    <TextBlock Style="{StaticResource StatusLabel}" Margin="0,0,0,8" TextWrapping="Wrap"
+                               Text="卡片内边距收窄，适合长期摆在桌面上、只需要一眼瞄一下额度的场景。" />
+
+                    <CheckBox Content="拖动时吸附屏幕边缘" IsChecked="{Binding WindowSnapToEdges, Mode=TwoWay}" Margin="0,0,0,8" />
+
+                    <CheckBox Content="启动后恢复上次使用的显示模式" IsChecked="{Binding WindowRestoreLastModeOnStartup, Mode=TwoWay}" Margin="0,0,0,8" />
+
+                    <CheckBox Content="悬停时临时提高不透明度（便于查看）" IsChecked="{Binding WindowEnhanceReadabilityOnHover, Mode=TwoWay}" Margin="0,0,0,10" />
+
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="44" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="不透明度（悬浮窗口/桌面看板）" Style="{StaticResource FieldLabel}" />
+                            <Slider Minimum="0.7" Maximum="1.0" SmallChange="0.05" LargeChange="0.1"
+                                    IsSnapToTickEnabled="True" TickFrequency="0.05" Margin="0,6,0,0"
+                                    Value="{Binding WindowOpacity, Mode=TwoWay}" />
+                        </StackPanel>
+                        <TextBlock Grid.Column="1" VerticalAlignment="Bottom" HorizontalAlignment="Right"
+                                   Text="{Binding WindowOpacity, StringFormat={}{0:P0}}" FontSize="12"
+                                   Foreground="{DynamicResource Brush.TextSecondary}" />
+                    </Grid>
+
+                    <TextBlock Text="背景材质" Style="{StaticResource FieldLabel}" />
+                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                        <RadioButton GroupName="WindowMaterial" Content="系统"
+                                     IsChecked="{Binding WindowMaterial, Converter={StaticResource EnumEquals}, ConverterParameter=System}" />
+                        <RadioButton GroupName="WindowMaterial" Content="云母"
+                                     IsChecked="{Binding WindowMaterial, Converter={StaticResource EnumEquals}, ConverterParameter=Mica}" />
+                        <RadioButton GroupName="WindowMaterial" Content="亚克力"
+                                     IsChecked="{Binding WindowMaterial, Converter={StaticResource EnumEquals}, ConverterParameter=Acrylic}" />
+                        <RadioButton GroupName="WindowMaterial" Content="纯色"
+                                     IsChecked="{Binding WindowMaterial, Converter={StaticResource EnumEquals}, ConverterParameter=Solid}" />
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
+                               Text="面板采用无边框自绘窗口以实现圆角和阴影，与 Windows 真实的云母/亚克力合成效果存在架构性冲突（详见 README「已知风险」），云母/亚克力在此显示为对应色调的半透明背景近似，而非系统级材质渲染。" />
+                    <TextBlock Style="{StaticResource StatusLabel}" Foreground="{DynamicResource Brush.AccentDeepSeek}"
+                               Visibility="{Binding IsMaterialFullySupported, Converter={StaticResource InverseBoolToVis}}"
+                               Text="当前系统版本/会话不满足 DWM 系统材质要求（需 Windows 11 22621+，且非远程桌面、非高对比度），以下材质选项均按纯色近似渲染。" />
+
+                    <Button Content="恢复默认窗口位置" Style="{StaticResource Style.SecondaryButton}" Margin="0,10,0,0"
+                            HorizontalAlignment="Left"
+                            AutomationProperties.AutomationId="RestoreDefaultWindowPositionButton"
+                            Command="{Binding RestoreDefaultWindowPositionCommand}"
+                            ToolTip="把当前模式（悬浮窗口/桌面看板）的位置和大小重置为推荐默认值" />
                 </StackPanel>
             </Border>
 
