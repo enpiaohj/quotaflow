@@ -127,40 +127,6 @@
                 </StackPanel>
             </Border>
 
-            <!-- 平台显示与顺序 -->
-            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
-                <StackPanel>
-                    <TextBlock Text="平台显示与顺序" Style="{StaticResource SectionTitle}" />
-                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
-                               Text="未配置凭据/登录的平台会自动隐藏；以下顺序就是面板卡片从上到下的顺序。" />
-                    <ItemsControl ItemsSource="{Binding PlatformRows}" Margin="0,4,0,0">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Grid Margin="0,4,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center"
-                                               FontSize="13" Foreground="{DynamicResource Brush.TextPrimary}" />
-                                    <Button Grid.Column="1" Content="↑" Width="30" Height="26" Margin="0,0,6,0"
-                                            AutomationProperties.AutomationId="{Binding ProviderId, StringFormat=MoveUp_{0}}"
-                                            Style="{StaticResource Style.SecondaryButton}"
-                                            Command="{Binding DataContext.MovePlatformUpCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                            CommandParameter="{Binding}" />
-                                    <Button Grid.Column="2" Content="↓" Width="30" Height="26"
-                                            AutomationProperties.AutomationId="{Binding ProviderId, StringFormat=MoveDown_{0}}"
-                                            Style="{StaticResource Style.SecondaryButton}"
-                                            Command="{Binding DataContext.MovePlatformDownCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                            CommandParameter="{Binding}" />
-                                </Grid>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
-            </Border>
-
             <!-- Claude -->
             <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
                 <StackPanel>

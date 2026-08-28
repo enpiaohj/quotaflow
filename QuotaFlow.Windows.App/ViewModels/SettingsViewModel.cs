@@ -37,10 +37,12 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _showUnknownWindows;
     [ObservableProperty] private ClockDisplayFormat _clockDisplayFormat;
 
-    // ---- 平台显示与顺序（面板卡片从上到下的顺序）----
-
-    /// <summary>设置页"平台显示与顺序"的当前顺序；保存时写入 AppSettings.PlatformOrder。</summary>
-    public ObservableCollection<PlatformOrderRow> PlatformRows { get; } = [];
+    /// <summary>
+    /// 面板卡片顺序：v1.0.6 起改由面板本身的 ▲/▼ 直接调整并即时持久化（见 MainPanelViewModel），
+    /// 设置页不再重复提供这个入口。这里只是原样透传打开设置页时读到的顺序，避免"保存设置"
+    /// 把用户刚在面板上调整过的顺序覆盖回旧值。
+    /// </summary>
+    private readonly string[]? _initialPlatformOrder;
 
     /// <summary>设置页"自定义平台"的可编辑行：新增/编辑的定义在保存前也驻留于此。</summary>
     public ObservableCollection<CustomPlatformRow> CustomPlatformRows { get; } = [];
@@ -62,18 +64,6 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// 再次新增也不会复用同一个 Id（Id 与凭据键一一对应，复用会撞上还没真正执行的挂起删除）。</summary>
     private int _nextCustomPlatformSeq = 1;
 
-    private static readonly string[] DefaultPlatformOrder = ["claude", "codex", "minimax", "deepseek"];
-
-    private static readonly IReadOnlyDictionary<string, string> PlatformDisplayNames = new Dictionary<string, string>
-    {
-        ["claude"] = "Claude",
-        ["codex"] = "Codex",
-        ["minimax"] = "MiniMax",
-        ["deepseek"] = "DeepSeek",
-    };
-
-    public IRelayCommand MovePlatformUpCommand { get; }
-    public IRelayCommand MovePlatformDownCommand { get; }
     public IRelayCommand AddCustomPlatformCommand { get; }
 
     // 接口地址覆盖（各平台分组下的"接口地址（可选）"）：空串 = 使用内置默认。保存时转成 null 落盘。
@@ -216,6 +206,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _codexEndpointOverride = current.CodexEndpointOverride ?? string.Empty;
         _miniMaxEndpointOverride = current.MiniMaxEndpointOverride ?? string.Empty;
         _deepSeekEndpointOverride = current.DeepSeekEndpointOverride ?? string.Empty;
+        _initialPlatformOrder = current.PlatformOrder;
 
         _clockPreviewTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _clockPreviewTimer.Tick += (_, _) => RefreshClockPreviews();
@@ -237,57 +228,20 @@ public sealed partial class SettingsViewModel : ObservableObject
         SaveGeneralSettingsCommand = new RelayCommand(SaveGeneralSettings);
         ToggleRevealMiniMaxKeyCommand = new AsyncRelayCommand(ToggleRevealMiniMaxKeyAsync);
         ToggleRevealDeepSeekKeyCommand = new AsyncRelayCommand(ToggleRevealDeepSeekKeyAsync);
-        MovePlatformUpCommand = new RelayCommand<PlatformOrderRow>(MovePlatformUp, r => r is not null && PlatformRows.IndexOf(r) > 0);
-        MovePlatformDownCommand = new RelayCommand<PlatformOrderRow>(MovePlatformDown,
-            r => r is not null && PlatformRows.IndexOf(r) >= 0 && PlatformRows.IndexOf(r) < PlatformRows.Count - 1);
         AddCustomPlatformCommand = new RelayCommand(AddCustomPlatform);
 
-        // 已保存的自定义平台定义：按 Id 索引，供平台顺序加载与行加载共用。
-        var customDefs = new Dictionary<string, CustomPlatformSettings>();
+        // 自定义平台行：已保存的定义逐条加载成可编辑行（防御性去重——正常写入路径不会产生
+        // 重复 Id，但不排除配置文件被手工改坏）。
+        var seenCustomIds = new HashSet<string>();
         foreach (var def in current.CustomPlatforms ?? [])
         {
-            if (!string.IsNullOrWhiteSpace(def.Id) && !customDefs.ContainsKey(def.Id))
+            if (string.IsNullOrWhiteSpace(def.Id) || !seenCustomIds.Add(def.Id))
             {
-                customDefs[def.Id] = def;
+                continue;
             }
-        }
 
-        // 平台顺序：优先用已保存的顺序，缺失的（内置默认 + 自定义）按自然顺序补在末尾。
-        var savedOrder = current.PlatformOrder ?? DefaultPlatformOrder;
-        foreach (var id in savedOrder)
-        {
-            if (PlatformDisplayNames.TryGetValue(id, out var name))
-            {
-                PlatformRows.Add(new PlatformOrderRow(id, name));
-            }
-            else if (customDefs.TryGetValue(id, out var def))
-            {
-                PlatformRows.Add(new PlatformOrderRow(id, def.Name));
-            }
-        }
-
-        foreach (var id in DefaultPlatformOrder)
-        {
-            if (PlatformRows.All(r => r.ProviderId != id))
-            {
-                PlatformRows.Add(new PlatformOrderRow(id, PlatformDisplayNames[id]));
-            }
-        }
-
-        foreach (var def in customDefs.Values)
-        {
-            if (PlatformRows.All(r => r.ProviderId != def.Id))
-            {
-                PlatformRows.Add(new PlatformOrderRow(def.Id, def.Name));
-            }
-        }
-
-        // 自定义平台行：已保存的定义逐条加载成可编辑行。
-        foreach (var def in customDefs.Values)
-        {
             var row = new CustomPlatformRow(def.Id, _credentialStore, _verifyIdentity,
                 DeleteCustomPlatform, s => StatusMessage = s, def);
-            row.NameChanged += OnCustomRowNameChanged;
             CustomPlatformRows.Add(row);
 
             if (TryParseCustomIndex(def.Id, out var n) && n >= _nextCustomPlatformSeq)
@@ -467,80 +421,28 @@ public sealed partial class SettingsViewModel : ObservableObject
         StatusMessage = "已清除本地缓存";
     }
 
-    private void MovePlatformUp(PlatformOrderRow? row) => MovePlatformBy(row, -1);
-
-    private void MovePlatformDown(PlatformOrderRow? row) => MovePlatformBy(row, +1);
-
-    private void MovePlatformBy(PlatformOrderRow? row, int delta)
-    {
-        if (row is null)
-        {
-            return;
-        }
-
-        var index = PlatformRows.IndexOf(row);
-        var target = index + delta;
-        if (index < 0 || target < 0 || target >= PlatformRows.Count)
-        {
-            return;
-        }
-
-        PlatformRows.Move(index, target);
-        // 位置变了，各行的上/下按钮可用性跟着变。
-        MovePlatformUpCommand.NotifyCanExecuteChanged();
-        MovePlatformDownCommand.NotifyCanExecuteChanged();
-    }
-
     private void AddCustomPlatform()
     {
         var id = $"custom-{_nextCustomPlatformSeq++}";
         var row = new CustomPlatformRow(id, _credentialStore, _verifyIdentity,
             DeleteCustomPlatform, s => StatusMessage = s);
-        row.NameChanged += OnCustomRowNameChanged;
         CustomPlatformRows.Add(row);
-        PlatformRows.Add(new PlatformOrderRow(id, row.Name));
         row.IsExpanded = true; // 新行直接展开，方便填写
         HasCustomPlatforms = true;
-        MovePlatformUpCommand.NotifyCanExecuteChanged();
-        MovePlatformDownCommand.NotifyCanExecuteChanged();
         StatusMessage = "已添加自定义平台（保存后生效）";
     }
 
     private void DeleteCustomPlatform(CustomPlatformRow row)
     {
         CustomPlatformRows.Remove(row);
-        row.NameChanged -= OnCustomRowNameChanged;
-
-        var orderRow = PlatformRows.FirstOrDefault(r => r.ProviderId == row.Id);
-        if (orderRow is not null)
-        {
-            PlatformRows.Remove(orderRow);
-        }
 
         // 真正删除凭据推迟到"保存设置"时执行（见 _pendingCredentialDeletions 上的说明）；
         // 这里只把行从列表里挪走，用户还有机会用"不保存就关闭"来撤销这次删除。
         _pendingCredentialDeletions.Add(row.CredentialKeyName);
         HasCustomPlatforms = CustomPlatformRows.Count > 0;
-        MovePlatformUpCommand.NotifyCanExecuteChanged();
-        MovePlatformDownCommand.NotifyCanExecuteChanged();
         StatusMessage = string.IsNullOrWhiteSpace(row.Name)
             ? "已移除该自定义平台（保存后生效）"
             : $"已移除「{row.Name}」（保存后生效）";
-    }
-
-    /// <summary>自定义平台改名时，同步"平台显示与顺序"里的显示名。</summary>
-    private void OnCustomRowNameChanged(object? sender, EventArgs e)
-    {
-        if (sender is not CustomPlatformRow row)
-        {
-            return;
-        }
-
-        var orderRow = PlatformRows.FirstOrDefault(r => r.ProviderId == row.Id);
-        if (orderRow is not null)
-        {
-            orderRow.DisplayName = row.Name;
-        }
     }
 
     private static bool TryParseCustomIndex(string id, out int index)
@@ -596,8 +498,9 @@ public sealed partial class SettingsViewModel : ObservableObject
             CodexEndpointOverride = ToNullIfEmpty(CodexEndpointOverride),
             MiniMaxEndpointOverride = ToNullIfEmpty(MiniMaxEndpointOverride),
             DeepSeekEndpointOverride = ToNullIfEmpty(DeepSeekEndpointOverride),
-            // 面板平台顺序（当前行的顺序即面板从上到下的顺序；空集合转 null = 用默认顺序）。
-            PlatformOrder = PlatformRows.Count > 0 ? PlatformRows.Select(r => r.ProviderId).ToArray() : null,
+            // 面板顺序现在只由面板自己的 ▲/▼ 调整并即时持久化（见 MainPanelViewModel），
+            // 这里原样透传打开设置页时读到的值，不要覆盖用户在面板上刚调整过的顺序。
+            PlatformOrder = _initialPlatformOrder,
             CustomPlatforms = customPlatforms,
         };
 
@@ -672,21 +575,4 @@ public sealed partial class ClockDisplayFormatOption : ObservableObject
 
     /// <summary>让 UIA / 无障碍工具把选项读成样本文本，而不是默认的类型名。</summary>
     public override string ToString() => Label;
-}
-
-/// <summary>
-/// 设置页"平台显示与顺序"的单个平台行：显示名 + 面板中的位置（由列表顺序决定）。
-/// 改为可写对象后，自定义平台改名时能同步更新这里显示的显示名。
-/// </summary>
-public sealed partial class PlatformOrderRow : ObservableObject
-{
-    public string ProviderId { get; }
-
-    [ObservableProperty] private string _displayName;
-
-    public PlatformOrderRow(string providerId, string displayName)
-    {
-        ProviderId = providerId;
-        _displayName = displayName;
-    }
 }

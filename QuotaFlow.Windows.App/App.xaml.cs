@@ -56,7 +56,7 @@ public partial class App : Application
         var providers = BuildProviders(settings);
         var coordinator = new RefreshCoordinator(providers);
 
-        _panelViewModel = new MainPanelViewModel(coordinator, _cache, settings, BuildProviders);
+        _panelViewModel = new MainPanelViewModel(coordinator, _cache, _settingsStore, settings, BuildProviders);
         _panelViewModel.SettingsRequested += (_, _) => OpenSettings();
         _panelViewModel.ExitRequested += (_, _) => Shutdown();
 

@@ -18,6 +18,7 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
 {
     private readonly RefreshCoordinator _coordinator;
     private readonly LocalCache _cache;
+    private readonly AppSettingsStore _settingsStore;
     private readonly Func<AppSettings, IEnumerable<IQuotaProvider>> _providerFactory;
     private AppSettings _settings;
     private readonly DispatcherTimer _tickTimer;
@@ -37,6 +38,10 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
     public IRelayCommand OpenSettingsCommand { get; }
     public IRelayCommand ExitCommand { get; }
 
+    /// <summary>卡片排序：直接在面板上用 ▲/▼ 调整，点击即时生效并持久化——不再经过设置页。</summary>
+    public IRelayCommand MoveCardUpCommand { get; }
+    public IRelayCommand MoveCardDownCommand { get; }
+
     /// <summary>面板标题行产品名后的版本号（如 "v1.0.3"）。与设置页 About 同源：程序集版本，避免手工改 UI 文本造成漂移。</summary>
     public string VersionText
     {
@@ -53,13 +58,25 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
     public MainPanelViewModel(
         RefreshCoordinator coordinator,
         LocalCache cache,
+        AppSettingsStore settingsStore,
         AppSettings initialSettings,
         Func<AppSettings, IEnumerable<IQuotaProvider>> providerFactory)
     {
         _coordinator = coordinator;
         _cache = cache;
+        _settingsStore = settingsStore;
         _settings = initialSettings;
         _providerFactory = providerFactory;
+
+        RefreshAllCommand = new AsyncRelayCommand(RefreshAllAsync);
+        OpenSettingsCommand = new RelayCommand(() => SettingsRequested?.Invoke(this, EventArgs.Empty));
+        ExitCommand = new RelayCommand(() => ExitRequested?.Invoke(this, EventArgs.Empty));
+        // 先于下面的 ApplyPlatformOrder 构造：后者在任何卡片顺序变化后都会刷新这两个命令的
+        // CanExecute（首/末位禁用对应箭头），如果晚于该调用赋值，ctor 里就会先撞上空引用。
+        MoveCardUpCommand = new RelayCommand<ProviderCardViewModel>(c => MoveCard(c, -1),
+            c => c is not null && Cards.IndexOf(c) > 0);
+        MoveCardDownCommand = new RelayCommand<ProviderCardViewModel>(c => MoveCard(c, +1),
+            c => c is not null && Cards.IndexOf(c) is var i && i >= 0 && i < Cards.Count - 1);
 
         // 初始顺序：Claude → Codex → MiniMax → DeepSeek（文档 §5.4），随后按设置里的 PlatformOrder 重排。
         foreach (var id in _coordinator.ProviderIds)
@@ -68,10 +85,6 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
         }
 
         ApplyPlatformOrder(_settings.PlatformOrder);
-
-        RefreshAllCommand = new AsyncRelayCommand(RefreshAllAsync);
-        OpenSettingsCommand = new RelayCommand(() => SettingsRequested?.Invoke(this, EventArgs.Empty));
-        ExitCommand = new RelayCommand(() => ExitRequested?.Invoke(this, EventArgs.Empty));
 
         _tickTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _tickTimer.Tick += (_, _) => TickAll();
@@ -170,6 +183,40 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
                 Cards.Add(new ProviderCardViewModel(id, DisplayNameFor(id), () => RefreshOneAsync(id)));
             }
         }
+
+        // ▲/▼ 的 CanExecute（首/末位禁用）在 ApplyPlatformOrder 里统一刷新——UpdateSettings 里
+        // ReconcileCards 之后总会紧跟着调用它，这里不用重复刷新一次。
+    }
+
+    /// <summary>
+    /// 面板卡片 ▲/▼：与相邻卡片交换位置，立即持久化到 PlatformOrder（不需要打开设置页、
+    /// 不需要额外点"保存"）。<see cref="_settings"/> 是当前已知的完整设置快照，这里只改
+    /// PlatformOrder 一个字段后整体落盘，其它字段维持不变。
+    /// </summary>
+    private void MoveCard(ProviderCardViewModel? card, int delta)
+    {
+        if (card is null)
+        {
+            return;
+        }
+
+        var index = Cards.IndexOf(card);
+        var target = index + delta;
+        if (index < 0 || target < 0 || target >= Cards.Count)
+        {
+            return;
+        }
+
+        Cards.Move(index, target);
+        _settings.PlatformOrder = Cards.Select(c => c.ProviderId).ToArray();
+        _settingsStore.Save(_settings);
+        NotifyMoveCommandsCanExecuteChanged();
+    }
+
+    private void NotifyMoveCommandsCanExecuteChanged()
+    {
+        MoveCardUpCommand.NotifyCanExecuteChanged();
+        MoveCardDownCommand.NotifyCanExecuteChanged();
     }
 
     /// <summary>
@@ -179,20 +226,23 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
     /// </summary>
     private void ApplyPlatformOrder(string[]? order)
     {
-        if (order is null || order.Length == 0)
+        if (order is { Length: > 0 })
         {
-            return;
+            var ordered = Cards.ToList()
+                .OrderBy(c => RankOf(c.ProviderId, order)) // OrderBy 稳定：未知 id 保持自然顺序
+                .ToList();
+
+            Cards.Clear();
+            foreach (var card in ordered)
+            {
+                Cards.Add(card);
+            }
         }
 
-        var ordered = Cards.ToList()
-            .OrderBy(c => RankOf(c.ProviderId, order)) // OrderBy 稳定：未知 id 保持自然顺序
-            .ToList();
-
-        Cards.Clear();
-        foreach (var card in ordered)
-        {
-            Cards.Add(card);
-        }
+        // 每次调用后 Cards 的成员/顺序都可能变了（哪怕这次没有 order 可用），
+        // ▲/▼ 首末位禁用状态要跟着刷新——本方法是唯一一个覆盖了 ctor 初始化和
+        // UpdateSettings 两条路径的收口点。
+        NotifyMoveCommandsCanExecuteChanged();
 
         static int RankOf(string providerId, string[] order)
         {

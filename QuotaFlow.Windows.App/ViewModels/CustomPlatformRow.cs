@@ -92,9 +92,6 @@ public sealed partial class CustomPlatformRow : ObservableObject
     /// <summary>只有余额语义才需要填币种。</summary>
     public Visibility CurrencyVisibility => DataKind == CustomDataKind.Balance ? Visibility.Visible : Visibility.Collapsed;
 
-    /// <summary>名称被用户修改时通知设置页，同步"平台显示与顺序"里的显示名。</summary>
-    public event EventHandler? NameChanged;
-
     public IRelayCommand SaveKeyCommand { get; }
     public IRelayCommand ClearKeyCommand { get; }
     public IAsyncRelayCommand ToggleRevealKeyCommand { get; }
@@ -137,8 +134,6 @@ public sealed partial class CustomPlatformRow : ObservableObject
         ToggleExpandCommand = new RelayCommand(() => IsExpanded = !IsExpanded);
         DeleteCommand = new RelayCommand(() => onDelete(this));
     }
-
-    partial void OnNameChanged(string value) => NameChanged?.Invoke(this, EventArgs.Empty);
 
     /// <summary>把当前编辑态打包成平台定义（保存设置时使用）。</summary>
     public CustomPlatformSettings ToSettings() => new()
