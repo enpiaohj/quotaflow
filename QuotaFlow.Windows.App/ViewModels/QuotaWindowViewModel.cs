@@ -11,9 +11,10 @@ namespace QuotaFlow.Windows.App.ViewModels;
 /// <list type="bullet">
 /// <item><description><see cref="IsError"/>：自定义平台的某个窗口取值/换算失败时，本窗口只显示
 /// "数据不可用" + 原因，不渲染进度条，绝不把占位的 0% 当成真实数据。</description></item>
-/// <item><description><see cref="DisplaySemantic"/>：面板顶部可切换"已用/剩余"，只影响
-/// <see cref="PercentText"/> 怎么念这个数字，底层数据和进度条填充方向不变（进度条永远按"剩余"
-/// 填充，符合"油量表"的直觉——切换的只是旁边那行文字）。</description></item>
+/// <item><description><see cref="DisplaySemantic"/>：面板顶部可切换"已用/剩余"，进度条的填充量
+/// （<see cref="DisplayPercent"/>）跟着切换后的数字走，而不是数字变了、条却纹丝不动——
+/// 后者会让人觉得"数字和条对不上、像个 bug"。颜色（<see cref="StatusKind"/>）则始终按剩余量
+/// 判断健康度，不随显示语义反转，切到"已用"看到的是同一根条填充到了对应的比例、同样的颜色。</description></item>
 /// </list>
 /// </summary>
 public sealed partial class QuotaWindowViewModel : ObservableObject
@@ -39,12 +40,21 @@ public sealed partial class QuotaWindowViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(PercentText))]
+    [NotifyPropertyChangedFor(nameof(DisplayPercent))]
     private QuotaDisplaySemantic _displaySemantic;
 
     /// <summary>按当前显示语义念出的百分比；已用 = 100 - 剩余，两者互补，底层数据不变。</summary>
     public string PercentText => DisplaySemantic == QuotaDisplaySemantic.Used
         ? $"{_window.UsedPercent:F0}%"
         : $"{_window.RemainingPercent:F0}%";
+
+    /// <summary>
+    /// 进度条绑定这个而不是 RemainingPercent：条的填充量必须跟着 <see cref="PercentText"/>
+    /// 显示的数字走，否则切换"已用/剩余"时数字变了、条却不变，看起来像没生效。
+    /// </summary>
+    public double DisplayPercent => DisplaySemantic == QuotaDisplaySemantic.Used
+        ? _window.UsedPercent
+        : _window.RemainingPercent;
 
     /// <summary>Good（&gt;30%）/ Warn（10%~30%）/ Bad（&lt;10%），供颜色转换器查表。</summary>
     public string StatusKind => _window.RemainingPercent switch

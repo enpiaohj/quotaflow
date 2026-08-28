@@ -122,9 +122,11 @@
                                                Style="{StaticResource Style.WindowLabelText}" VerticalAlignment="Center"
                                                TextTrimming="CharacterEllipsis" ToolTip="{Binding DisplayName}" />
 
-                                    <!-- 正常态：进度条 + 百分比（按 DisplaySemantic 显示已用/剩余） -->
+                                    <!-- 正常态：进度条 + 百分比（都按 DisplaySemantic 显示已用/剩余，
+                                         条的填充量和旁边的数字必须是同一个值，否则切换时数字变了
+                                         条不变，看起来像没生效） -->
                                     <ProgressBar Grid.Row="0" Grid.Column="1" Margin="8,0"
-                                                 Value="{Binding RemainingPercent, Mode=OneWay}"
+                                                 Value="{Binding DisplayPercent, Mode=OneWay}"
                                                  Style="{StaticResource Style.QuotaProgressBar}"
                                                  Foreground="{Binding StatusKind, Converter={StaticResource StatusKindToBrush}}"
                                                  VerticalAlignment="Center"
