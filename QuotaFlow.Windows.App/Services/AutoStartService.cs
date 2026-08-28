@@ -31,7 +31,10 @@ public static class AutoStartService
         var exePath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName;
         if (!string.IsNullOrEmpty(exePath))
         {
-            key.SetValue(ValueName, $"\"{exePath}\"");
+            // --autostart 标记这次启动是 Windows 登录时自动拉起的，不是用户手动双击/从开始菜单打开——
+            // App.xaml.cs 据此决定要不要在启动时主动展示一次面板（开机自启不该突然弹窗打扰用户，
+            // 手动启动则应该给个"确实打开了"的反馈）。
+            key.SetValue(ValueName, $"\"{exePath}\" --autostart");
         }
     }
 }

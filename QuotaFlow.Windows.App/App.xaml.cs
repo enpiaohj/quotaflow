@@ -49,11 +49,6 @@ public partial class App : Application
         _cache = new LocalCache();
         _settingsStore = new AppSettingsStore();
 
-        // 必须在 Load() 之前查：Load() 对"文件不存在"这一支不会落盘任何东西，之后再查
-        // Exists() 依然是 false，没法用来判断"是不是第一次运行"。升级用户早就有这个文件，
-        // 不会被误判成首次运行——只有真·全新安装才会走下面的自动展示分支。
-        var isFirstRun = !_settingsStore.Exists();
-
         var settings = _settingsStore.Load();
         _themeManager.Apply(settings.Theme);
         SystemEvents.UserPreferenceChanged += OnSystemPreferenceChanged;
@@ -69,23 +64,23 @@ public partial class App : Application
         _panelWindow.SettingsRequested += (_, _) => OpenSettings();
 
         // 诊断/自检：--show-panel 启动后直接展示面板且失焦不自动收起。
-        // 不带该参数时与普通启动完全一致（仅驻留托盘、点击外部自动收起）。
-        if (Array.IndexOf(e.Args, "--show-panel") >= 0)
+        var isDiagnosticShow = Array.IndexOf(e.Args, "--show-panel") >= 0;
+        // 开机自动启动（设置页"开机自动启动"写进 Run 注册表项时会带上这个参数，见
+        // AutoStartService.SetEnabled）——这种启动不是用户主动点开的，不该突然弹一个窗口。
+        var isAutoStartLaunch = Array.IndexOf(e.Args, "--autostart") >= 0;
+
+        if (isDiagnosticShow)
         {
             _panelWindow.KeepVisibleOnDeactivate = true;
             _panelWindow.ShowNearTray();
         }
-        else if (isFirstRun)
+        else if (!isAutoStartLaunch)
         {
-            // 全新安装：只有一个新增的托盘图标，很容易被当成"没装上/没启动"（尤其图标默认还可能
-            // 被 Windows 折叠进溢出区）。首次启动主动展示一次面板，给用户一个"确实打开了"的
-            // 直接反馈；行为和普通点击托盘图标打开完全一样，点击外部照常自动收起，不强留。
+            // 用户手动启动（双击 exe、开始菜单、桌面快捷方式……）：主动展示一次面板，给一个
+            // "确实打开了"的直接反馈——不然托盘常驻应用启动后界面上什么反应都没有，容易被当成
+            // "没装上/没启动"（尤其图标默认还可能被 Windows 折叠进溢出区）。每次手动启动都展示，
+            // 不是只展示一次；行为和点击托盘图标打开完全一样，点击外部照常自动收起，不强留。
             _panelWindow.ShowNearTray();
-
-            // 必须立即落盘默认设置，否则用户这次只是看了一眼就点开别处收起（没碰过设置页/
-            // 拖过卡片顺序/切过显示语义），settings.json 依然不存在——下次启动 Exists() 还是
-            // false，会被再次误判成"首次运行"，面板就变成每次启动都弹一次，而不是只弹一次。
-            _settingsStore.Save(settings);
         }
 
         SetupTrayIcon();

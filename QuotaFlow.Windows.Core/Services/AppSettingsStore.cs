@@ -42,13 +42,6 @@ public sealed class AppSettingsStore
         return Path.Combine(dir, "settings.json");
     }
 
-    /// <summary>
-    /// 是否已经有落盘的设置文件（任意版本、任意格式）。调用方在首次启动 <see cref="Load"/> 之前
-    /// 查一次，就能可靠判断"这是不是这台机器上第一次运行"——升级用户早就有这个文件，不会被
-    /// 误判成首次运行。
-    /// </summary>
-    public bool Exists() => File.Exists(_settingsPath);
-
     public AppSettings Load()
     {
         if (!File.Exists(_settingsPath))
