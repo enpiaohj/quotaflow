@@ -41,7 +41,7 @@ public class CustomPlatformProviderTests
 
         Assert.Equal(ProviderState.NotConfigured, snapshot.State);
         Assert.Equal(ErrorCategory.NotConfigured, snapshot.ErrorCategory);
-        Assert.Equal(0, handler.RequestedUris.Count); // 没 Key 不发起请求
+        Assert.Empty(handler.RequestedUris); // 没 Key 不发起请求
     }
 
     [Fact]
@@ -59,7 +59,7 @@ public class CustomPlatformProviderTests
         var snapshot = await provider.GetSnapshotAsync();
 
         Assert.Equal(ProviderState.NotConfigured, snapshot.State);
-        Assert.Equal(0, handler.RequestedUris.Count);
+        Assert.Empty(handler.RequestedUris);
     }
 
     [Fact]
@@ -125,7 +125,7 @@ public class CustomPlatformProviderTests
 
         Assert.Equal(ProviderState.ProviderError, snapshot.State);
         Assert.Equal(ErrorCategory.ResponseFormat, snapshot.ErrorCategory);
-        Assert.Equal(0, handler.RequestedUris.Count);
+        Assert.Empty(handler.RequestedUris);
     }
 
     // ---- HTTP 状态分类 ----

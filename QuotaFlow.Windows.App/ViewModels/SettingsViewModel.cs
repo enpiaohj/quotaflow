@@ -45,6 +45,23 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// <summary>设置页"自定义平台"的可编辑行：新增/编辑的定义在保存前也驻留于此。</summary>
     public ObservableCollection<CustomPlatformRow> CustomPlatformRows { get; } = [];
 
+    /// <summary>一个自定义平台都没有时，卡片显示引导文案而不是一片空白。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CustomPlatformsEmptyHintVisibility))]
+    private bool _hasCustomPlatforms;
+
+    public Visibility CustomPlatformsEmptyHintVisibility => HasCustomPlatforms ? Visibility.Collapsed : Visibility.Visible;
+
+    /// <summary>
+    /// 删除自定义平台时，对应的凭据键名先记在这里，真正的删除动作推迟到点击"保存设置"才执行——
+    /// 不保存就关闭设置页等于撤销这次删除，与本页其它编辑（顺序调整、新增平台）保持一致。
+    /// </summary>
+    private readonly HashSet<string> _pendingCredentialDeletions = [];
+
+    /// <summary>本次设置页会话里下一个可用的 custom-{n} 编号，只增不减：即使中途删除了编号最大的行，
+    /// 再次新增也不会复用同一个 Id（Id 与凭据键一一对应，复用会撞上还没真正执行的挂起删除）。</summary>
+    private int _nextCustomPlatformSeq = 1;
+
     private static readonly string[] DefaultPlatformOrder = ["claude", "codex", "minimax", "deepseek"];
 
     private static readonly IReadOnlyDictionary<string, string> PlatformDisplayNames = new Dictionary<string, string>
@@ -272,8 +289,14 @@ public sealed partial class SettingsViewModel : ObservableObject
                 DeleteCustomPlatform, s => StatusMessage = s, def);
             row.NameChanged += OnCustomRowNameChanged;
             CustomPlatformRows.Add(row);
+
+            if (TryParseCustomIndex(def.Id, out var n) && n >= _nextCustomPlatformSeq)
+            {
+                _nextCustomPlatformSeq = n + 1;
+            }
         }
 
+        HasCustomPlatforms = CustomPlatformRows.Count > 0;
         RefreshCredentialLabels();
         // 已配置的 Key 默认以掩码呈现，避免打开设置页就直接把明文带出来。
         MiniMaxKeyDisplayText = IsMiniMaxConfigured ? KeyMask : string.Empty;
@@ -470,13 +493,14 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     private void AddCustomPlatform()
     {
-        var id = $"custom-{NextCustomPlatformIndex()}";
+        var id = $"custom-{_nextCustomPlatformSeq++}";
         var row = new CustomPlatformRow(id, _credentialStore, _verifyIdentity,
             DeleteCustomPlatform, s => StatusMessage = s);
         row.NameChanged += OnCustomRowNameChanged;
         CustomPlatformRows.Add(row);
         PlatformRows.Add(new PlatformOrderRow(id, row.Name));
         row.IsExpanded = true; // 新行直接展开，方便填写
+        HasCustomPlatforms = true;
         MovePlatformUpCommand.NotifyCanExecuteChanged();
         MovePlatformDownCommand.NotifyCanExecuteChanged();
         StatusMessage = "已添加自定义平台（保存后生效）";
@@ -493,10 +517,15 @@ public sealed partial class SettingsViewModel : ObservableObject
             PlatformRows.Remove(orderRow);
         }
 
-        _credentialStore.Delete(row.CredentialKeyName); // 删平台即删凭据（含孤儿凭据）
+        // 真正删除凭据推迟到"保存设置"时执行（见 _pendingCredentialDeletions 上的说明）；
+        // 这里只把行从列表里挪走，用户还有机会用"不保存就关闭"来撤销这次删除。
+        _pendingCredentialDeletions.Add(row.CredentialKeyName);
+        HasCustomPlatforms = CustomPlatformRows.Count > 0;
         MovePlatformUpCommand.NotifyCanExecuteChanged();
         MovePlatformDownCommand.NotifyCanExecuteChanged();
-        StatusMessage = $"已删除「{row.Name}」";
+        StatusMessage = string.IsNullOrWhiteSpace(row.Name)
+            ? "已移除该自定义平台（保存后生效）"
+            : $"已移除「{row.Name}」（保存后生效）";
     }
 
     /// <summary>自定义平台改名时，同步"平台显示与顺序"里的显示名。</summary>
@@ -512,21 +541,6 @@ public sealed partial class SettingsViewModel : ObservableObject
         {
             orderRow.DisplayName = row.Name;
         }
-    }
-
-    /// <summary>分配下一个 custom-{n}：取所有已存在行（含已保存定义）编号的最大值 + 1。</summary>
-    private int NextCustomPlatformIndex()
-    {
-        var max = 0;
-        foreach (var row in CustomPlatformRows)
-        {
-            if (TryParseCustomIndex(row.Id, out var n))
-            {
-                max = Math.Max(max, n);
-            }
-        }
-
-        return max + 1;
     }
 
     private static bool TryParseCustomIndex(string id, out int index)
@@ -548,9 +562,9 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         AutoStartService.SetEnabled(StartWithWindows);
 
-        // 自定义平台：逐行校验，配置不完整的行直接跳过（不落盘），并提示用户。
+        // 自定义平台：逐行校验，配置不完整的行直接跳过（不落盘），并点名提示用户是哪一个。
         var customPlatforms = new List<CustomPlatformSettings>();
-        var skippedInvalid = false;
+        var skippedNames = new List<string>();
         foreach (var row in CustomPlatformRows)
         {
             var def = row.ToSettings();
@@ -561,7 +575,7 @@ public sealed partial class SettingsViewModel : ObservableObject
                 uri.Scheme is not ("http" or "https") ||
                 (def.AuthKind == CustomAuthKind.CustomHeader && string.IsNullOrWhiteSpace(def.HeaderName)))
             {
-                skippedInvalid = true;
+                skippedNames.Add(string.IsNullOrWhiteSpace(def.Name) ? row.Id : def.Name);
                 continue;
             }
 
@@ -588,9 +602,27 @@ public sealed partial class SettingsViewModel : ObservableObject
         };
 
         _settingsStore.Save(settings);
+
+        // 执行挂起的凭据删除：只删"确实已经不在当前行列表里"的键——万一被删掉的编号在本次会话
+        // 里又被新增行占用（理论上不会发生，_nextCustomPlatformSeq 只增不减，这里是双重保险），
+        // 也不会误删新行刚保存的 Key。
+        if (_pendingCredentialDeletions.Count > 0)
+        {
+            var liveKeys = CustomPlatformRows.Select(r => r.CredentialKeyName).ToHashSet();
+            foreach (var key in _pendingCredentialDeletions)
+            {
+                if (!liveKeys.Contains(key))
+                {
+                    _credentialStore.Delete(key);
+                }
+            }
+
+            _pendingCredentialDeletions.Clear();
+        }
+
         SettingsSaved?.Invoke(this, settings);
-        StatusMessage = skippedInvalid
-            ? "已保存（有自定义平台配置不完整被跳过：名称、接口地址、取值路径、有效 http(s) 地址、自定义请求头名任一缺失都不会保存）"
+        StatusMessage = skippedNames.Count > 0
+            ? $"设置已保存（以下自定义平台配置不完整未保存：{string.Join("、", skippedNames)}。请检查名称/接口地址/取值路径是否填写，自定义请求头方式还需填写请求头名称）"
             : "设置已保存";
     }
 

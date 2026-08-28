@@ -1,5 +1,7 @@
+using System.Collections.Specialized;
 using System.Windows;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using QuotaFlow.Windows.App.ViewModels;
 
 namespace QuotaFlow.Windows.App.Views;
@@ -20,6 +22,31 @@ public partial class SettingsWindow : Window
         TrySetIcon();
         Deactivated += (_, _) => ViewModel.HideAllRevealedKeys();
         Closed += (_, _) => ViewModel.HideAllRevealedKeys();
+
+        // 设置页很长，"自定义平台"卡片在中段偏下；新增一行后自动把它滚动进可视区域，
+        // 不然用户点了"+ 添加自定义平台"却看不到任何变化，会误以为没生效。
+        viewModel.CustomPlatformRows.CollectionChanged += OnCustomPlatformRowsChanged;
+        Closed += (_, _) => viewModel.CustomPlatformRows.CollectionChanged -= OnCustomPlatformRowsChanged;
+    }
+
+    private void OnCustomPlatformRowsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.Action != NotifyCollectionChangedAction.Add || e.NewItems is null)
+        {
+            return;
+        }
+
+        // 用 Background 优先级延后到本轮布局/容器生成之后再取容器，否则新加的行还没有对应的可视化元素。
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        {
+            foreach (var item in e.NewItems)
+            {
+                if (CustomPlatformsItemsControl.ItemContainerGenerator.ContainerFromItem(item) is FrameworkElement element)
+                {
+                    element.BringIntoView();
+                }
+            }
+        });
     }
 
     private void TrySetIcon()

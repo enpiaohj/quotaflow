@@ -314,7 +314,10 @@
                     </Grid>
                     <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
                                Text="除内置平台外，可手动添加其他额度接口（如 OpenCode / GO）。保存后立即显示在面板上，无需重启。" />
-                    <ItemsControl ItemsSource="{Binding CustomPlatformRows}" Margin="0,4,0,0">
+                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap" HorizontalAlignment="Center"
+                               Margin="0,10,0,0" Text="还没有自定义平台，点击右上角“+ 添加自定义平台”试试。"
+                               Visibility="{Binding CustomPlatformsEmptyHintVisibility}" />
+                    <ItemsControl x:Name="CustomPlatformsItemsControl" ItemsSource="{Binding CustomPlatformRows}" Margin="0,4,0,0">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Border BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="1"
