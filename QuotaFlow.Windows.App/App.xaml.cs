@@ -28,6 +28,9 @@ public partial class App : Application
     private SecureCredentialStore _credentialStore = null!;
     private LocalCache _cache = null!;
     private HttpClient _httpClient = null!;
+    private System.Windows.Forms.Timer? _trayClickDebounceTimer;
+    private bool _trayPendingSingleClick;
+    private readonly GlobalHotkeyService _hotkeyService = new();
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -85,8 +88,32 @@ public partial class App : Application
 
         SetupTrayIcon();
 
+        // 全局快捷键（默认 Alt+Z）：显示/隐藏面板，跟托盘单击同一个动作。绑定不需要面板已经
+        // 显示过——AttachTo 会强制创建它的原生窗口句柄。注册失败（组合键被其它程序占用）时
+        // 静默跳过，不弹错误——用户在设置页主动改快捷键时才需要看到"注册失败"这种反馈；
+        // 启动时的注册失败更适合"安静地不生效"，而不是一开机就弹一个技术性错误。
+        _hotkeyService.AttachTo(_panelWindow);
+        _hotkeyService.HotkeyPressed += () => _panelWindow?.ToggleVisibility();
+        ApplyHotkeySettings(settings);
+
         // 启动后先展示缓存（已在 MainPanelViewModel 构造函数里完成），再决定是否立即后台刷新。
         _ = _panelViewModel.RefreshOnStartupIfEnabledAsync();
+    }
+
+    /// <summary>
+    /// 按当前设置注册（或反注册）全局热键。启动时、以及每次设置页保存后都会调用——统一走
+    /// 这一个方法，不需要调用方关心"这次改没改"，反注册旧的、注册新的都是幂等操作。
+    /// </summary>
+    /// <returns>启用了但注册失败时返回 false（多半是组合键被占用）；未启用或注册成功都返回 true。</returns>
+    private bool ApplyHotkeySettings(Core.Models.AppSettings settings)
+    {
+        if (!settings.HotkeyEnabled)
+        {
+            _hotkeyService.Unregister();
+            return true;
+        }
+
+        return _hotkeyService.Register(settings.HotkeyModifiers, settings.HotkeyKey);
     }
 
     private IEnumerable<IQuotaProvider> BuildProviders(Core.Models.AppSettings settings)
@@ -132,6 +159,17 @@ public partial class App : Application
         }
     }
 
+    /// <summary>
+    /// 托盘交互：单击开关面板、双击打开并立即刷新、中键刷新全部、右键菜单（刷新/设置/
+    /// 开机自动启动/退出）。
+    ///
+    /// 单击/双击消歧是这里唯一有陷阱的地方：WinForms 的双击手势本身会先连续触发两次
+    /// MouseClick，再触发一次 MouseDoubleClick——如果单击直接切换显示，双击点两下会先把
+    /// 面板"开了又关"，紧接着 MouseDoubleClick 处理器还要再抢一次状态，观感很怪、状态也可能对不上。
+    /// 标准解法是把单击动作延后 <see cref="SystemInformation.DoubleClickTime"/>：这段时间内
+    /// 如果第二次点击到达（判定为双击），就取消这次单击、改走双击逻辑（强制展示 + 刷新，
+    /// 而不是 toggle，这样不管单击的两次残留状态是什么，最终结果都对）。
+    /// </summary>
     private void SetupTrayIcon()
     {
         var (icon, handle) = TrayIconFactory.Create();
@@ -145,20 +183,85 @@ public partial class App : Application
         };
 
         var menu = new ContextMenuStrip();
-        menu.Items.Add("打开面板", null, (_, _) => _panelWindow?.ShowNearTray());
-        menu.Items.Add("立即刷新", null, (_, _) => _ = _panelViewModel?.RefreshAllAsync());
+        menu.Items.Add("刷新全部", null, (_, _) => _ = _panelViewModel?.RefreshAllAsync());
         menu.Items.Add("设置", null, (_, _) => OpenSettings());
+
+        var autoStartItem = new ToolStripMenuItem("开机自动启动") { CheckOnClick = true };
+        autoStartItem.Click += (_, _) =>
+        {
+            // CheckOnClick 已经在 Click 触发前把 Checked 翻到了目标值，直接读它当作"想要的状态"。
+            var ok = AutoStartService.SetEnabled(autoStartItem.Checked);
+            if (!ok)
+            {
+                // 写注册表失败：把复选框状态改回真实情况，不能让菜单显示的状态跟实际生效状态不一致。
+                autoStartItem.Checked = AutoStartService.IsEnabled();
+                ShowTrayBalloon("开机自动启动设置失败", "请检查权限后重试", ToolTipIcon.Warning);
+            }
+            else
+            {
+                ShowTrayBalloon("QuotaFlow", autoStartItem.Checked ? "已开启开机自动启动" : "已关闭开机自动启动", ToolTipIcon.Info);
+            }
+        };
+        menu.Items.Add(autoStartItem);
+        // 菜单每次弹出前都从注册表现读一次真实状态——设置页那边也能改这个开关，两处入口要保持同步。
+        menu.Opening += (_, _) => autoStartItem.Checked = AutoStartService.IsEnabled();
+
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => Shutdown());
         _notifyIcon.ContextMenuStrip = menu;
+
+        _trayClickDebounceTimer = new System.Windows.Forms.Timer { Interval = SystemInformation.DoubleClickTime };
+        _trayClickDebounceTimer.Tick += (_, _) =>
+        {
+            _trayClickDebounceTimer!.Stop();
+            if (_trayPendingSingleClick)
+            {
+                _trayPendingSingleClick = false;
+                _panelWindow?.ToggleVisibility();
+            }
+        };
 
         _notifyIcon.MouseClick += (_, args) =>
         {
             if (args.Button == MouseButtons.Left)
             {
-                _panelWindow?.ToggleVisibility();
+                _trayPendingSingleClick = true;
+                _trayClickDebounceTimer!.Stop();
+                _trayClickDebounceTimer.Start();
+            }
+            else if (args.Button == MouseButtons.Middle)
+            {
+                _ = _panelViewModel?.RefreshAllAsync();
             }
         };
+
+        _notifyIcon.MouseDoubleClick += (_, args) =>
+        {
+            if (args.Button != MouseButtons.Left)
+            {
+                return;
+            }
+
+            _trayClickDebounceTimer!.Stop();
+            _trayPendingSingleClick = false;
+            // 强制展示（不是 toggle）：不管前面两次残留的单击状态是开是关，双击的语义都是
+            // "打开并立即刷新"，展示动作必须是确定性的。
+            _panelWindow?.ShowNearTray();
+            _ = _panelViewModel?.RefreshAllAsync();
+        };
+    }
+
+    private void ShowTrayBalloon(string title, string text, ToolTipIcon icon)
+    {
+        if (_notifyIcon is null)
+        {
+            return;
+        }
+
+        _notifyIcon.BalloonTipTitle = title;
+        _notifyIcon.BalloonTipText = text;
+        _notifyIcon.BalloonTipIcon = icon;
+        _notifyIcon.ShowBalloonTip(3000);
     }
 
     private SettingsWindow? _settingsWindow;
@@ -172,7 +275,8 @@ public partial class App : Application
         }
 
         var currentSettings = _settingsStore.Load();
-        var settingsViewModel = new SettingsViewModel(_settingsStore, _credentialStore, _cache, currentSettings);
+        var settingsViewModel = new SettingsViewModel(_settingsStore, _credentialStore, _cache, currentSettings,
+            applyHotkeySettings: ApplyHotkeySettings);
         settingsViewModel.SettingsSaved += (_, newSettings) =>
         {
             _themeManager.Apply(newSettings.Theme);
@@ -237,6 +341,9 @@ public partial class App : Application
     {
         SystemEvents.UserPreferenceChanged -= OnSystemPreferenceChanged;
         _panelViewModel?.Dispose();
+        _hotkeyService.Dispose();
+        _trayClickDebounceTimer?.Stop();
+        _trayClickDebounceTimer?.Dispose();
 
         if (_notifyIcon is not null)
         {

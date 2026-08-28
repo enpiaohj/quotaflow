@@ -109,7 +109,25 @@
             <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
                 <StackPanel>
                     <TextBlock Text="启动" Style="{StaticResource SectionTitle}" />
-                    <CheckBox Content="开机自动启动（默认关闭）" IsChecked="{Binding StartWithWindows}" />
+                    <CheckBox Content="开机自动启动（默认关闭）" IsChecked="{Binding StartWithWindows}"
+                              AutomationProperties.AutomationId="StartWithWindowsCheckBox" />
+                </StackPanel>
+            </Border>
+
+            <!-- 快捷键 -->
+            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
+                <StackPanel>
+                    <TextBlock Text="快捷键" Style="{StaticResource SectionTitle}" />
+                    <CheckBox Content="启用显示/隐藏面板快捷键" IsChecked="{Binding HotkeyEnabled}" />
+                    <TextBlock Text="组合键" Style="{StaticResource FieldLabel}" Margin="0,10,0,0" />
+                    <TextBox x:Name="HotkeyCaptureBox" Style="{StaticResource EndpointBox}" IsReadOnly="True"
+                             Text="{Binding HotkeyDisplayText, Mode=OneWay}"
+                             AutomationProperties.AutomationId="HotkeyCaptureBox"
+                             Cursor="Hand" HorizontalContentAlignment="Center"
+                             ToolTip="点击后按下想要的组合键（至少包含一个 Alt/Ctrl/Shift/Win）"
+                             PreviewKeyDown="OnHotkeyCapturePreviewKeyDown" />
+                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
+                               Text="默认 Alt+Z。点击上面的框后直接按下新组合键即可修改，保存设置后生效；如果被其它程序占用会在保存后提示注册失败。" />
                 </StackPanel>
             </Border>
 

@@ -198,6 +198,25 @@
                 <TextBlock Grid.Row="1" Grid.Column="0" Text="AI 额度状态" Style="{StaticResource Style.SubtitleText}" Margin="0,2,0,0" />
 
                 <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
+                    <!-- 固定面板：固定后点击面板外部不再自动收起，方便一边看额度一边操作其它窗口。
+                         托盘图标单击/双击/Esc 依然能正常关闭，固定只挡"点外部失焦"这一种收起方式。 -->
+                    <Button Content="&#128204;" FontSize="12" Command="{Binding TogglePinCommand}"
+                            AutomationProperties.AutomationId="TogglePinButton"
+                            ToolTip="固定面板（固定后点击外部不收起）" Margin="0,0,4,0">
+                        <Button.Style>
+                            <!-- Style.IconButton 的模板把背景硬写成 Transparent（不绑 TemplateBinding），
+                                 外部设 Background 不会有任何视觉效果；Foreground 是继承属性，能穿透
+                                 自动生成的 ContentPresenter 影响到图标本身的颜色，所以用变色而不是变底色
+                                 来表达"已固定"状态。 -->
+                            <Style TargetType="Button" BasedOn="{StaticResource Style.IconButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsPinned}" Value="True">
+                                        <Setter Property="Foreground" Value="{DynamicResource Brush.AccentDeepSeek}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
                     <!-- 已用/剩余显示语义：点击切换，立即生效并持久化，纯展示层，不触发任何刷新。 -->
                     <Button Content="{Binding DisplaySemanticLabel}" Command="{Binding ToggleDisplaySemanticCommand}"
                             AutomationProperties.AutomationId="ToggleDisplaySemanticButton"

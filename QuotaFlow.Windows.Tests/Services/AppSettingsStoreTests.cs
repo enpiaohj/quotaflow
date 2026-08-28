@@ -44,6 +44,9 @@ public sealed class AppSettingsStoreTests : IDisposable
         Assert.Equal(MiniMaxRegion.China, settings.MiniMaxRegion);
         Assert.Null(settings.ClaudeEndpointOverride);
         Assert.Null(settings.DeepSeekEndpointOverride);
+        Assert.True(settings.HotkeyEnabled);
+        Assert.Equal(HotkeyModifiers.Alt, settings.HotkeyModifiers);
+        Assert.Equal("Z", settings.HotkeyKey);
     }
 
     [Fact]
@@ -62,6 +65,9 @@ public sealed class AppSettingsStoreTests : IDisposable
             MiniMaxEndpointOverride = "https://minimax.example/usage",
             DeepSeekEndpointOverride = "https://deepseek.example/balance",
             PlatformOrder = ["deepseek", "claude", "minimax", "codex"],
+            HotkeyEnabled = false,
+            HotkeyModifiers = HotkeyModifiers.Control | HotkeyModifiers.Shift,
+            HotkeyKey = "Q",
         };
 
         _store.Save(original);
@@ -78,6 +84,9 @@ public sealed class AppSettingsStoreTests : IDisposable
         Assert.Equal(original.MiniMaxEndpointOverride, loaded.MiniMaxEndpointOverride);
         Assert.Equal(original.DeepSeekEndpointOverride, loaded.DeepSeekEndpointOverride);
         Assert.Equal(["deepseek", "claude", "minimax", "codex"], loaded.PlatformOrder);
+        Assert.Equal(original.HotkeyEnabled, loaded.HotkeyEnabled);
+        Assert.Equal(original.HotkeyModifiers, loaded.HotkeyModifiers);
+        Assert.Equal(original.HotkeyKey, loaded.HotkeyKey);
     }
 
     [Fact]

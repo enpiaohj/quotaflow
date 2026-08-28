@@ -27,6 +27,13 @@ public sealed partial class SettingsViewModel : ObservableObject
     private readonly SecureCredentialStore _credentialStore;
     private readonly LocalCache _cache;
 
+    /// <summary>
+    /// 保存设置后用新设置去注册全局热键（返回是否注册成功），由组合根（App.xaml.cs）注入真正的
+    /// <see cref="Services.GlobalHotkeyService"/> 调用；测试/未注入时默认当作"成功"，不用为了
+    /// 单测特意起一个真的窗口句柄。
+    /// </summary>
+    private readonly Func<AppSettings, bool> _applyHotkeySettings;
+
     [ObservableProperty] private int _autoRefreshIntervalMinutes;
     [ObservableProperty] private bool _refreshOnStartup;
     [ObservableProperty] private bool _startWithWindows;
@@ -36,6 +43,62 @@ public sealed partial class SettingsViewModel : ObservableObject
     private MiniMaxRegion _miniMaxRegion;
     [ObservableProperty] private bool _showUnknownWindows;
     [ObservableProperty] private ClockDisplayFormat _clockDisplayFormat;
+
+    // ---- 显示/隐藏面板全局快捷键（默认 Alt+Z）----
+
+    [ObservableProperty] private bool _hotkeyEnabled;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HotkeyDisplayText))]
+    private HotkeyModifiers _hotkeyModifiers;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HotkeyDisplayText))]
+    private string _hotkeyKey = "Z";
+
+    /// <summary>捕获框里念给用户看的组合键文案，例如 "Alt+Z"。</summary>
+    public string HotkeyDisplayText
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (HotkeyModifiers.HasFlag(HotkeyModifiers.Control))
+            {
+                parts.Add("Ctrl");
+            }
+
+            if (HotkeyModifiers.HasFlag(HotkeyModifiers.Alt))
+            {
+                parts.Add("Alt");
+            }
+
+            if (HotkeyModifiers.HasFlag(HotkeyModifiers.Shift))
+            {
+                parts.Add("Shift");
+            }
+
+            if (HotkeyModifiers.HasFlag(HotkeyModifiers.Windows))
+            {
+                parts.Add("Win");
+            }
+
+            parts.Add(HotkeyKey);
+            return string.Join("+", parts);
+        }
+    }
+
+    /// <summary>设置页的捕获框（PreviewKeyDown 代码后置）按下新组合键后调用；至少要有一个修饰键。</summary>
+    public void SetHotkeyCombo(HotkeyModifiers modifiers, string keyName)
+    {
+        if (modifiers == HotkeyModifiers.None || string.IsNullOrWhiteSpace(keyName))
+        {
+            StatusMessage = "快捷键至少要包含一个修饰键（Alt/Ctrl/Shift/Win）";
+            return;
+        }
+
+        HotkeyModifiers = modifiers;
+        HotkeyKey = keyName;
+    }
 
     /// <summary>
     /// 面板卡片顺序：v1.0.6 起改由面板本身的 ▲/▼ 直接调整并即时持久化（见 MainPanelViewModel），
@@ -195,12 +258,14 @@ public sealed partial class SettingsViewModel : ObservableObject
     public IAsyncRelayCommand ToggleRevealDeepSeekKeyCommand { get; }
 
     public SettingsViewModel(AppSettingsStore settingsStore, SecureCredentialStore credentialStore, LocalCache cache,
-        AppSettings current, Func<string, Task<IdentityVerificationResult>>? verifyIdentity = null)
+        AppSettings current, Func<string, Task<IdentityVerificationResult>>? verifyIdentity = null,
+        Func<AppSettings, bool>? applyHotkeySettings = null)
     {
         _settingsStore = settingsStore;
         _credentialStore = credentialStore;
         _cache = cache;
         _verifyIdentity = verifyIdentity ?? IdentityVerifier.VerifyAsync;
+        _applyHotkeySettings = applyHotkeySettings ?? (_ => true);
 
         _autoRefreshIntervalMinutes = current.AutoRefreshIntervalMinutes;
         _refreshOnStartup = current.RefreshOnStartup;
@@ -215,6 +280,9 @@ public sealed partial class SettingsViewModel : ObservableObject
         _miniMaxEndpointOverride = current.MiniMaxEndpointOverride ?? string.Empty;
         _deepSeekEndpointOverride = current.DeepSeekEndpointOverride ?? string.Empty;
         _initialPlatformOrder = current.PlatformOrder;
+        _hotkeyEnabled = current.HotkeyEnabled;
+        _hotkeyModifiers = current.HotkeyModifiers;
+        _hotkeyKey = current.HotkeyKey;
         _initialQuotaDisplaySemantic = current.QuotaDisplaySemantic;
 
         _clockPreviewTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -486,7 +554,8 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     private void SaveGeneralSettings()
     {
-        AutoStartService.SetEnabled(StartWithWindows);
+        var autoStartWasEnabled = AutoStartService.IsEnabled();
+        var autoStartWriteSucceeded = AutoStartService.SetEnabled(StartWithWindows);
 
         // 自定义平台：逐行校验，配置不完整的行直接跳过（不落盘），并点名提示用户是哪一个。
         var customPlatforms = new List<CustomPlatformSettings>();
@@ -523,9 +592,13 @@ public sealed partial class SettingsViewModel : ObservableObject
             // 已用/剩余显示语义同理，由面板顶部切换并即时持久化，这里原样透传。
             QuotaDisplaySemantic = _initialQuotaDisplaySemantic,
             CustomPlatforms = customPlatforms,
+            HotkeyEnabled = HotkeyEnabled,
+            HotkeyModifiers = HotkeyModifiers,
+            HotkeyKey = HotkeyKey,
         };
 
         _settingsStore.Save(settings);
+        var hotkeyApplied = _applyHotkeySettings(settings);
 
         // 执行挂起的凭据删除：只删"确实已经不在当前行列表里"的键——万一被删掉的编号在本次会话
         // 里又被新增行占用（理论上不会发生，_nextCustomPlatformSeq 只增不减，这里是双重保险），
@@ -545,9 +618,37 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
 
         SettingsSaved?.Invoke(this, settings);
+
+        var autoStartNote = BuildAutoStartNote(autoStartWasEnabled, StartWithWindows, autoStartWriteSucceeded);
+        // 快捷键注册失败通常是组合键被其它程序占用了——跟自动启动一样，"设置已保存"这句笼统提示
+        // 盖不住"这个具体操作其实没生效"，必须点名。
+        var hotkeyNote = HotkeyEnabled && !hotkeyApplied
+            ? $"，但快捷键 {HotkeyDisplayText} 注册失败（可能被其它程序占用），请换一个组合"
+            : string.Empty;
+
         StatusMessage = skippedNames.Count > 0
-            ? $"设置已保存（以下自定义平台配置不完整未保存：{string.Join("、", skippedNames)}。请检查名称/接口地址/取值路径是否填写，自定义请求头方式还需填写请求头名称）"
-            : "设置已保存";
+            ? $"设置已保存（以下自定义平台配置不完整未保存：{string.Join("、", skippedNames)}。请检查名称/接口地址/取值路径是否填写，自定义请求头方式还需填写请求头名称）{autoStartNote}{hotkeyNote}"
+            : $"设置已保存{autoStartNote}{hotkeyNote}";
+    }
+
+    /// <summary>
+    /// 拼一句开机自动启动的具体反馈，附在保存状态后面——"设置已保存"这种笼统提示不足以确认
+    /// 这个具体操作是不是真的生效了（注册表写入理论上可能因权限失败）。只有状态真的发生变化，
+    /// 或者写入失败时才附加这句，没变化又成功时不啰嗦。
+    /// </summary>
+    private static string BuildAutoStartNote(bool wasEnabled, bool requestedEnabled, bool writeSucceeded)
+    {
+        if (!writeSucceeded)
+        {
+            return requestedEnabled ? "，但开机自动启动开启失败，请检查权限后重试" : "，但开机自动启动关闭失败，请检查权限后重试";
+        }
+
+        if (wasEnabled == requestedEnabled)
+        {
+            return string.Empty;
+        }
+
+        return requestedEnabled ? "，开机自动启动已开启" : "，开机自动启动已关闭";
     }
 
     /// <summary>

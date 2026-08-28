@@ -17,11 +17,22 @@ public partial class MainPanelWindow : Window
     {
         InitializeComponent();
         DataContext = viewModel;
+
+        // "固定"按钮（ViewModel.IsPinned）和诊断用的 --show-panel 走的是同一个开关——
+        // 用户固定面板本质上就是"这次先别自动收起"，跟诊断场景要的效果一样，没必要拆两个字段。
+        viewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(MainPanelViewModel.IsPinned))
+            {
+                KeepVisibleOnDeactivate = viewModel.IsPinned;
+            }
+        };
     }
 
     /// <summary>
-    /// 诊断用途（--show-panel）：为 True 时失焦不自动隐藏，便于自动化检查面板内容。
-    /// 正常使用保持 False，点击面板外部仍会立即收起。
+    /// True 时失焦不自动隐藏：要么是诊断用途（--show-panel），要么是用户在面板上点了"固定"
+    /// （<see cref="MainPanelViewModel.IsPinned"/>，见构造函数里的同步）。正常使用默认 False，
+    /// 点击面板外部会立即收起；固定/诊断状态下才不会。
     /// </summary>
     public bool KeepVisibleOnDeactivate { get; set; }
 

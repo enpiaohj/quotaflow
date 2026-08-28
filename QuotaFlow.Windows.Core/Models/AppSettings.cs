@@ -45,6 +45,21 @@ public enum QuotaDisplaySemantic
 }
 
 /// <summary>
+/// 显示/隐藏面板全局快捷键的修饰键组合。故意不直接用 WPF 的 <c>System.Windows.Input.ModifierKeys</c>——
+/// Core 项目不依赖任何 UI 框架，键位组合在这里只是纯数据，实际按键捕获/注册（Win32
+/// RegisterHotKey）都在 App 层的 Services/GlobalHotkeyService 完成。
+/// </summary>
+[Flags]
+public enum HotkeyModifiers
+{
+    None = 0,
+    Alt = 1,
+    Control = 2,
+    Shift = 4,
+    Windows = 8,
+}
+
+/// <summary>
 /// 非敏感的应用设置（不含任何密钥），经 <see cref="Services.AppSettingsStore"/> 以 DPAPI 加密信封
 /// 持久化到磁盘。密钥仍只走 Windows 凭据管理器，本模型不承载任何密钥字段。
 /// </summary>
@@ -105,6 +120,18 @@ public sealed class AppSettings
     /// 读取方一律用 <c>?? []</c> 兜底，防手改配置出现 <c>customPlatforms: null</c>。
     /// </summary>
     public List<CustomPlatformSettings> CustomPlatforms { get; set; } = [];
+
+    /// <summary>是否启用"显示/隐藏面板"全局快捷键，默认开启（默认组合见下）。</summary>
+    public bool HotkeyEnabled { get; set; } = true;
+
+    /// <summary>快捷键的修饰键组合，默认 Alt。</summary>
+    public HotkeyModifiers HotkeyModifiers { get; set; } = HotkeyModifiers.Alt;
+
+    /// <summary>
+    /// 快捷键的主键，存成字符串（对应 WPF <c>System.Windows.Input.Key</c> 枚举的 <c>ToString()</c>，
+    /// 如 "Z"、"F5"），只在 App 层解析——Core 不依赖 WPF。默认 "Z"（Alt+Z）。
+    /// </summary>
+    public string HotkeyKey { get; set; } = "Z";
 
     public static readonly int[] AllowedRefreshIntervals = [5, 10, 15, 30];
 }

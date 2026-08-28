@@ -1,8 +1,10 @@
 using System.Collections.Specialized;
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using QuotaFlow.Windows.App.ViewModels;
+using QuotaFlow.Windows.Core.Models;
 
 namespace QuotaFlow.Windows.App.Views;
 
@@ -47,6 +49,48 @@ public partial class SettingsWindow : Window
                 }
             }
         });
+    }
+
+    /// <summary>
+    /// "组合键"捕获框：按下的第一个非修饰键就是新的主键，同时读 <see cref="Keyboard.Modifiers"/>
+    /// 拿到当前按住的修饰键集合。Alt 组合在 WPF 里比较特殊——<c>e.Key</c> 会是
+    /// <see cref="Key.System"/>，真正按下的键在 <see cref="KeyEventArgs.SystemKey"/> 里。
+    /// 全程 <c>e.Handled = true</c>：这个框不是普通文本框，不能让 Tab/Alt 之类的键触发它们
+    /// 平常的副作用（切焦点、弹菜单）。
+    /// </summary>
+    private void OnHotkeyCapturePreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        e.Handled = true;
+
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (key is Key.LeftAlt or Key.RightAlt or Key.LeftCtrl or Key.RightCtrl
+            or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin or Key.System)
+        {
+            return; // 单按修饰键本身，还没构成一个完整组合，等用户按下主键。
+        }
+
+        var modifiers = HotkeyModifiers.None;
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+        {
+            modifiers |= HotkeyModifiers.Control;
+        }
+
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Alt))
+        {
+            modifiers |= HotkeyModifiers.Alt;
+        }
+
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+        {
+            modifiers |= HotkeyModifiers.Shift;
+        }
+
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Windows))
+        {
+            modifiers |= HotkeyModifiers.Windows;
+        }
+
+        ViewModel.SetHotkeyCombo(modifiers, key.ToString());
     }
 
     private void TrySetIcon()

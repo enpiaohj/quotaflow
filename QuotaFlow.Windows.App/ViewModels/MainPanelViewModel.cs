@@ -55,6 +55,16 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
 
     public IRelayCommand ToggleDisplaySemanticCommand { get; }
 
+    /// <summary>
+    /// 面板是否被固定：固定后点击面板外部不再自动收起（<see cref="Views.MainPanelWindow.KeepVisibleOnDeactivate"/>
+    /// 跟着这个值走），方便一边看额度一边操作其它窗口。只是当次会话的临时状态，不持久化——
+    /// 每次重新打开面板默认都是未固定，不会因为忘记取消固定而一直"赖"在屏幕上。
+    /// 通过托盘图标/Esc/再次点击图标手动关闭不受固定状态影响，固定只挡"点外部失焦"这一种收起方式。
+    /// </summary>
+    [ObservableProperty] private bool _isPinned;
+
+    public IRelayCommand TogglePinCommand { get; }
+
     /// <summary>面板标题行产品名后的版本号（如 "v1.0.3"）。与设置页 About 同源：程序集版本，避免手工改 UI 文本造成漂移。</summary>
     public string VersionText
     {
@@ -92,6 +102,7 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
         MoveCardDownCommand = new RelayCommand<ProviderCardViewModel>(c => MoveCard(c, +1),
             c => c is not null && Cards.IndexOf(c) is var i && i >= 0 && i < Cards.Count - 1);
         ToggleDisplaySemanticCommand = new RelayCommand(ToggleDisplaySemantic);
+        TogglePinCommand = new RelayCommand(() => IsPinned = !IsPinned);
 
         // 初始顺序：Claude → Codex → MiniMax → DeepSeek（文档 §5.4），随后按设置里的 PlatformOrder 重排。
         foreach (var id in _coordinator.ProviderIds)
