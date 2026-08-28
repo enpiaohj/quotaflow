@@ -69,7 +69,23 @@
         </Style>
     </Window.Resources>
 
-    <ScrollViewer Padding="20" VerticalScrollBarVisibility="Auto">
+    <DockPanel>
+        <!-- 固定底部：保存按钮 + 状态文案，始终可见，不用滚到最下面才能保存。 -->
+        <Border DockPanel.Dock="Bottom" Background="{DynamicResource Brush.Background}"
+                BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="0,1,0,0"
+                Padding="20,10">
+            <StackPanel>
+                <TextBlock Text="{Binding StatusMessage}" HorizontalAlignment="Center" Margin="0,0,0,8"
+                           AutomationProperties.AutomationId="StatusMessageText"
+                           FontSize="12" Foreground="{DynamicResource Brush.AccentDeepSeek}"
+                           TextWrapping="Wrap" />
+                <Button Content="保存设置" Style="{StaticResource Style.PrimaryButton}" HorizontalAlignment="Stretch"
+                        AutomationProperties.AutomationId="SaveSettingsButton"
+                        Command="{Binding SaveGeneralSettingsCommand}" />
+            </StackPanel>
+        </Border>
+
+        <ScrollViewer Padding="20" VerticalScrollBarVisibility="Auto">
         <StackPanel>
 
             <!-- 刷新 -->
@@ -520,13 +536,7 @@
                 </StackPanel>
             </Border>
 
-            <TextBlock Text="{Binding StatusMessage}" HorizontalAlignment="Center" Margin="0,4,0,10"
-                       AutomationProperties.AutomationId="StatusMessageText"
-                       FontSize="12" Foreground="{DynamicResource Brush.AccentDeepSeek}" />
-
-            <Button Content="保存设置" Style="{StaticResource Style.PrimaryButton}" HorizontalAlignment="Stretch"
-                    AutomationProperties.AutomationId="SaveSettingsButton"
-                    Command="{Binding SaveGeneralSettingsCommand}" Margin="0,0,0,20" />
         </StackPanel>
-    </ScrollViewer>
+        </ScrollViewer>
+    </DockPanel>
 </Window>

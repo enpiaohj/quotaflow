@@ -1,3 +1,4 @@
+using QuotaFlow.Windows.Core.Authentication;
 using QuotaFlow.Windows.Core.Models;
 using QuotaFlow.Windows.Core.Providers;
 
@@ -78,5 +79,43 @@ public class CodexQuotaProviderTests
 
         Assert.Equal(ProviderState.ProviderError, snapshot.State);
         Assert.Equal(ErrorCategory.ResponseFormat, snapshot.ErrorCategory);
+    }
+
+    // ---- 登录状态引导文案：区分"真的没登录"和"登录了但模式不对" ----
+
+    [Fact]
+    public async Task GetSnapshotAsync_NoAuthFile_ReturnsGenericLoginGuidance()
+    {
+        var reader = new CodexCredentialReader(Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".json"));
+        var provider = new CodexQuotaProvider(new HttpClient(), reader);
+
+        var snapshot = await provider.GetSnapshotAsync();
+
+        Assert.Equal(ProviderState.NotConfigured, snapshot.State);
+        Assert.Contains("请先运行 Codex CLI 并使用 ChatGPT 账号登录", snapshot.UserGuidance);
+    }
+
+    [Fact]
+    public async Task GetSnapshotAsync_ApiKeyModeLogin_ReturnsSpecificGuidance_NotGenericLoginPrompt()
+    {
+        // 用户已经用 Codex CLI 登录过，只是选了 API Key 模式而非 ChatGPT 订阅模式——
+        // 这种情况下告诉他"请先登录"是误导，应该点明具体原因。
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".json");
+        await File.WriteAllTextAsync(path, """{ "auth_mode": "apikey", "tokens": { "access_token": "irrelevant" } }""");
+        try
+        {
+            var reader = new CodexCredentialReader(path);
+            var provider = new CodexQuotaProvider(new HttpClient(), reader);
+
+            var snapshot = await provider.GetSnapshotAsync();
+
+            Assert.Equal(ProviderState.NotConfigured, snapshot.State);
+            Assert.Contains("API Key", snapshot.UserGuidance);
+            Assert.DoesNotContain("请先运行 Codex CLI 并使用 ChatGPT 账号登录", snapshot.UserGuidance);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 }

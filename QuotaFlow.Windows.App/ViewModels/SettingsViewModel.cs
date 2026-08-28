@@ -354,7 +354,10 @@ public sealed partial class SettingsViewModel : ObservableObject
         {
             CredentialStatus.Valid => "已检测到本机 ChatGPT 登录",
             CredentialStatus.Expired => "已检测到本机登录（凭据可能已过期，如额度显示异常请重新登录）",
-            CredentialStatus.NotFound => "未检测到，请先运行 Codex CLI 并使用 ChatGPT 账号登录",
+            // NotFound 覆盖两种情况：真的没有 auth.json（Message 为 null），和文件存在但登录成了
+            // API Key 模式而非 ChatGPT 订阅模式（Message 会点明这一点）——后者不该被提示"请登录"，
+            // 用户其实已经登录了，只是模式不对，用具体原因才不会误导。
+            CredentialStatus.NotFound => codex.Message ?? "未检测到，请先运行 Codex CLI 并使用 ChatGPT 账号登录",
             CredentialStatus.ParseError => "凭据文件无法解析",
             _ => "未知状态",
         };

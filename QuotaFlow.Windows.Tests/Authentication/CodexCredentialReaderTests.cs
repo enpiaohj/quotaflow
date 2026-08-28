@@ -36,6 +36,10 @@ public class CodexCredentialReaderTests
 
         Assert.Equal(CredentialStatus.NotFound, result.Status);
         Assert.Null(result.AccessToken);
+        // Message 要点出具体原因（API Key 模式），而不是空——上层要用它替换掉"请登录"这种
+        // 对已经登录、只是模式不对的用户会造成误导的通用文案。
+        Assert.NotNull(result.Message);
+        Assert.Contains("API Key", result.Message);
     }
 
     [Fact]

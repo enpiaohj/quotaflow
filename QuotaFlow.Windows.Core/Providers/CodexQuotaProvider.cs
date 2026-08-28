@@ -42,7 +42,11 @@ public sealed class CodexQuotaProvider : IQuotaProvider
         switch (credential.Status)
         {
             case CredentialStatus.NotFound:
-                return NotConfigured();
+                // NotFound 覆盖两种情况：真的没有 auth.json（Message 为 null，用通用引导），
+                // 和文件存在但 auth_mode 不是 chatgpt——多半是登录成了 API Key 模式
+                // （Message 里点明了这一点）。后者按通用文案提示"请登录"会误导已经登录过、
+                // 只是模式选错的用户，所以有具体原因时优先用具体原因。
+                return NotConfigured(credential.Message);
 
             case CredentialStatus.ParseError:
                 return ProviderErrorSnapshot(credential.Message ?? "无法解析本机凭据");
@@ -217,14 +221,14 @@ public sealed class CodexQuotaProvider : IQuotaProvider
         _ => ($"{seconds / 3600}_hour", $"{seconds / 3600} 小时"),
     };
 
-    private ProviderSnapshot NotConfigured() => new()
+    private ProviderSnapshot NotConfigured(string? specificReason = null) => new()
     {
         ProviderId = ProviderId,
         DisplayName = "Codex",
         State = ProviderState.NotConfigured,
         DataSource = _dataSourceUrl,
         ErrorCategory = ErrorCategory.NotConfigured,
-        UserGuidance = "未检测到 Codex CLI 本机 ChatGPT 登录，请先运行 Codex CLI 并使用 ChatGPT 账号登录",
+        UserGuidance = specificReason ?? "未检测到 Codex CLI 本机 ChatGPT 登录，请先运行 Codex CLI 并使用 ChatGPT 账号登录",
     };
 
     private ProviderSnapshot AuthExpired(string guidance) => new()
