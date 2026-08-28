@@ -75,12 +75,14 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
     /// 默认开启，用户也可以在任意模式下自行在设置页调整。</summary>
     public bool IsCompactLayout => _presentation.IsCompactLayout;
 
-    /// <summary>顶部"显示模式"按钮上的图标，跟随当前模式变化：📌托盘 / 🗗悬浮 / 🖥桌面看板。</summary>
+    /// <summary>顶部"显示模式"按钮上的图标，跟随当前模式变化：📥托盘 / 🪟悬浮 / 🖥桌面看板。
+    /// 托盘弹出原来用的是📌（图钉），跟旁边"固定面板"按钮的图标完全重复、容易认错——
+    /// 换成📥（收件箱/托盘造型），三个图标含义各自独立，不再跟固定按钮撞图标。</summary>
     public string ModeGlyph => CurrentMode switch
     {
         WindowPresentationMode.Floating => "\U0001FA9F",
         WindowPresentationMode.DesktopPanel => "\U0001F5A5",
-        _ => "\U0001F4CC",
+        _ => "\U0001F4E5",
     };
 
     /// <summary>说明点击后会切到哪个模式（托盘 → 悬浮 → 桌面看板 → 托盘，循环）。</summary>
