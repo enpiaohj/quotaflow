@@ -100,9 +100,11 @@
                                    Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVis}}" />
                     </StackPanel>
 
-                    <!-- 额度窗口型卡片（Claude/Codex/MiniMax） -->
+                    <!-- 额度窗口型卡片（Claude/Codex/MiniMax，及自定义平台）。v1.1.0 起与余额区块
+                         各自独立可见（HasWindows / HasBalance），不再互斥——自定义平台理论上可以
+                         同时有若干个百分比窗口和一个余额窗口。 -->
                     <ItemsControl ItemsSource="{Binding Windows}" Margin="0,6,0,0"
-                                  Visibility="{Binding HasBalance, Converter={StaticResource InverseBoolToVis}}">
+                                  Visibility="{Binding HasWindows, Converter={StaticResource BoolToVis}}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="{x:Type vm:QuotaWindowViewModel}">
                                 <Grid Margin="0,0,0,6">
@@ -119,16 +121,29 @@
                                     <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding DisplayName}"
                                                Style="{StaticResource Style.WindowLabelText}" VerticalAlignment="Center"
                                                TextTrimming="CharacterEllipsis" ToolTip="{Binding DisplayName}" />
+
+                                    <!-- 正常态：进度条 + 百分比（按 DisplaySemantic 显示已用/剩余） -->
                                     <ProgressBar Grid.Row="0" Grid.Column="1" Margin="8,0"
                                                  Value="{Binding RemainingPercent, Mode=OneWay}"
                                                  Style="{StaticResource Style.QuotaProgressBar}"
                                                  Foreground="{Binding StatusKind, Converter={StaticResource StatusKindToBrush}}"
-                                                 VerticalAlignment="Center" />
+                                                 VerticalAlignment="Center"
+                                                 Visibility="{Binding IsError, Converter={StaticResource InverseBoolToVis}}" />
                                     <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding PercentText}"
-                                               Style="{StaticResource Style.PercentText}" VerticalAlignment="Center" />
+                                               Style="{StaticResource Style.PercentText}" VerticalAlignment="Center"
+                                               Visibility="{Binding IsError, Converter={StaticResource InverseBoolToVis}}" />
+
+                                    <!-- 错误态：单个窗口取值失败，只在这一行显示"数据不可用"，不拿占位 0% 冒充数据，
+                                         也不影响同一张卡片里其它窗口的正常渲染。 -->
+                                    <TextBlock Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" Margin="8,0,0,0"
+                                               Text="数据不可用" VerticalAlignment="Center" FontSize="12"
+                                               Foreground="{DynamicResource Brush.TextTertiary}"
+                                               ToolTip="{Binding ErrorMessage}"
+                                               Visibility="{Binding IsError, Converter={StaticResource BoolToVis}}" />
 
                                     <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Margin="8,1,0,0"
-                                               Text="{Binding ResetHintText}" Style="{StaticResource Style.ResetHintText}" />
+                                               Text="{Binding ResetHintText}" Style="{StaticResource Style.ResetHintText}"
+                                               Visibility="{Binding IsError, Converter={StaticResource InverseBoolToVis}}" />
                                 </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
@@ -181,6 +196,18 @@
                 <TextBlock Grid.Row="1" Grid.Column="0" Text="AI 额度状态" Style="{StaticResource Style.SubtitleText}" Margin="0,2,0,0" />
 
                 <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
+                    <!-- 已用/剩余显示语义：点击切换，立即生效并持久化，纯展示层，不触发任何刷新。 -->
+                    <Button Content="{Binding DisplaySemanticLabel}" Command="{Binding ToggleDisplaySemanticCommand}"
+                            AutomationProperties.AutomationId="ToggleDisplaySemanticButton"
+                            ToolTip="切换显示已用/剩余百分比" FontSize="11" Margin="0,0,4,0">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource Style.IconButton}">
+                                <Setter Property="Width" Value="Auto" />
+                                <Setter Property="Height" Value="24" />
+                                <Setter Property="Padding" Value="8,2" />
+                            </Style>
+                        </Button.Style>
+                    </Button>
                     <Button Style="{StaticResource Style.IconButton}" Content="&#9881;" FontSize="14"
                             AutomationProperties.AutomationId="SettingsButton"
                             Click="OnOpenSettingsClick" ToolTip="设置" Margin="0,0,4,0" />

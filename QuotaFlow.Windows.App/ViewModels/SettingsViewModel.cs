@@ -44,6 +44,13 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// </summary>
     private readonly string[]? _initialPlatformOrder;
 
+    /// <summary>
+    /// 额度显示语义（已用/剩余）：v1.1.0 起改由面板顶部的切换按钮直接调整并即时持久化
+    /// （见 MainPanelViewModel），设置页不提供入口。原样透传，避免"保存设置"把面板上刚切换过的
+    /// 语义覆盖回默认值。
+    /// </summary>
+    private readonly QuotaDisplaySemantic _initialQuotaDisplaySemantic;
+
     /// <summary>设置页"自定义平台"的可编辑行：新增/编辑的定义在保存前也驻留于此。</summary>
     public ObservableCollection<CustomPlatformRow> CustomPlatformRows { get; } = [];
 
@@ -65,6 +72,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     private int _nextCustomPlatformSeq = 1;
 
     public IRelayCommand AddCustomPlatformCommand { get; }
+    public IRelayCommand AddOpenCodeGoTemplateCommand { get; }
 
     // 接口地址覆盖（各平台分组下的"接口地址（可选）"）：空串 = 使用内置默认。保存时转成 null 落盘。
     [ObservableProperty]
@@ -207,6 +215,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _miniMaxEndpointOverride = current.MiniMaxEndpointOverride ?? string.Empty;
         _deepSeekEndpointOverride = current.DeepSeekEndpointOverride ?? string.Empty;
         _initialPlatformOrder = current.PlatformOrder;
+        _initialQuotaDisplaySemantic = current.QuotaDisplaySemantic;
 
         _clockPreviewTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _clockPreviewTimer.Tick += (_, _) => RefreshClockPreviews();
@@ -229,6 +238,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         ToggleRevealMiniMaxKeyCommand = new AsyncRelayCommand(ToggleRevealMiniMaxKeyAsync);
         ToggleRevealDeepSeekKeyCommand = new AsyncRelayCommand(ToggleRevealDeepSeekKeyAsync);
         AddCustomPlatformCommand = new RelayCommand(AddCustomPlatform);
+        AddOpenCodeGoTemplateCommand = new RelayCommand(AddOpenCodeGoTemplate);
 
         // 自定义平台行：已保存的定义逐条加载成可编辑行（防御性去重——正常写入路径不会产生
         // 重复 Id，但不排除配置文件被手工改坏）。
@@ -432,6 +442,17 @@ public sealed partial class SettingsViewModel : ObservableObject
         StatusMessage = "已添加自定义平台（保存后生效）";
     }
 
+    /// <summary>OpenCode GO 内置模板：预填地址/鉴权方式/三个额度窗口，只需填 API Key 就能用。</summary>
+    private void AddOpenCodeGoTemplate()
+    {
+        var id = $"custom-{_nextCustomPlatformSeq++}";
+        var row = CustomPlatformRow.CreateOpenCodeGoTemplate(id, _credentialStore, _verifyIdentity,
+            DeleteCustomPlatform, s => StatusMessage = s);
+        CustomPlatformRows.Add(row);
+        HasCustomPlatforms = true;
+        StatusMessage = "已添加 OpenCode GO 模板，填写并保存 API Key 后点击「保存设置」即可生效";
+    }
+
     private void DeleteCustomPlatform(CustomPlatformRow row)
     {
         CustomPlatformRows.Remove(row);
@@ -470,12 +491,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         foreach (var row in CustomPlatformRows)
         {
             var def = row.ToSettings();
-            if (string.IsNullOrWhiteSpace(def.Name) ||
-                string.IsNullOrWhiteSpace(def.Endpoint) ||
-                string.IsNullOrWhiteSpace(def.ValuePath) ||
-                !Uri.TryCreate(def.Endpoint, UriKind.Absolute, out var uri) ||
-                uri.Scheme is not ("http" or "https") ||
-                (def.AuthKind == CustomAuthKind.CustomHeader && string.IsNullOrWhiteSpace(def.HeaderName)))
+            if (!IsValidCustomPlatform(def))
             {
                 skippedNames.Add(string.IsNullOrWhiteSpace(def.Name) ? row.Id : def.Name);
                 continue;
@@ -501,6 +517,8 @@ public sealed partial class SettingsViewModel : ObservableObject
             // 面板顺序现在只由面板自己的 ▲/▼ 调整并即时持久化（见 MainPanelViewModel），
             // 这里原样透传打开设置页时读到的值，不要覆盖用户在面板上刚调整过的顺序。
             PlatformOrder = _initialPlatformOrder,
+            // 已用/剩余显示语义同理，由面板顶部切换并即时持久化，这里原样透传。
+            QuotaDisplaySemantic = _initialQuotaDisplaySemantic,
             CustomPlatforms = customPlatforms,
         };
 
@@ -527,6 +545,51 @@ public sealed partial class SettingsViewModel : ObservableObject
         StatusMessage = skippedNames.Count > 0
             ? $"设置已保存（以下自定义平台配置不完整未保存：{string.Join("、", skippedNames)}。请检查名称/接口地址/取值路径是否填写，自定义请求头方式还需填写请求头名称）"
             : "设置已保存";
+    }
+
+    /// <summary>
+    /// 保存前校验一个自定义平台定义：平台级字段（名称/地址/鉴权）与 v1.0.5 一致；
+    /// v1.1.0 新增对窗口列表的校验——至少一个窗口、每个窗口名称和取值路径必填、
+    /// 同一平台内窗口名称不能重复、"已使用/剩余数值"语义必须配置额度上限。
+    /// 任一条不满足就整个平台跳过保存（不做"部分窗口生效"这种更复杂的半保存）。
+    /// </summary>
+    private static bool IsValidCustomPlatform(CustomPlatformSettings def)
+    {
+        if (string.IsNullOrWhiteSpace(def.Name) ||
+            string.IsNullOrWhiteSpace(def.Endpoint) ||
+            !Uri.TryCreate(def.Endpoint, UriKind.Absolute, out var uri) ||
+            uri.Scheme is not ("http" or "https") ||
+            (def.AuthKind == CustomAuthKind.CustomHeader && string.IsNullOrWhiteSpace(def.HeaderName)))
+        {
+            return false;
+        }
+
+        if (def.QuotaWindows.Count == 0)
+        {
+            return false;
+        }
+
+        var seenWindowNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var window in def.QuotaWindows)
+        {
+            if (string.IsNullOrWhiteSpace(window.Name) || string.IsNullOrWhiteSpace(window.ValuePath))
+            {
+                return false;
+            }
+
+            if (!seenWindowNames.Add(window.Name))
+            {
+                return false; // 同一平台内窗口名称重复
+            }
+
+            if (window.DataKind is CustomDataKind.UsedValue or CustomDataKind.RemainingValue &&
+                string.IsNullOrWhiteSpace(window.LimitPath) && window.FixedLimit is null)
+            {
+                return false; // 已使用/剩余数值语义必须配置额度上限（路径或固定值二选一）
+            }
+        }
+
+        return true;
     }
 
     private static string? ToNullIfEmpty(string? value)

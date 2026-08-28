@@ -126,7 +126,71 @@ public sealed class AppSettingsStore
             SaveCore(settings);
         }
 
+        MigrateAndPersistIfNeeded(settings);
         return settings;
+    }
+
+    /// <summary>
+    /// v1.1.0 自定义平台多额度窗口改造：把 v1.0.5 及更早版本保存的单窗口配置（<c>valuePath</c> /
+    /// <c>resetsAtPath</c> / <c>dataKind</c> / <c>currency</c>）迁移进 <c>quotaWindows[0]</c>。
+    /// 不影响 API Key（本来就只在 Windows 凭据管理器里，迁移完全不碰）、不改变 Id（凭据键不变）、
+    /// 不新增平台条目——只是把同一个平台的形状换成新格式。保存新格式前先备份旧信封快照，
+    /// 万一迁移出问题可以找回迁移前的原始配置。
+    /// </summary>
+    private void MigrateAndPersistIfNeeded(AppSettings settings)
+    {
+        var migratedAny = false;
+        foreach (var platform in settings.CustomPlatforms ?? [])
+        {
+            if (platform.QuotaWindows is { Count: > 0 })
+            {
+                continue; // 已经是新格式（或本来就没有旧字段可迁移）。
+            }
+
+            if (string.IsNullOrWhiteSpace(platform.ValuePath))
+            {
+                continue; // 没有旧数据可迁移（例如手改配置留下的空条目），保持空列表由 Provider 按未配置处理。
+            }
+
+            platform.QuotaWindows =
+            [
+                new CustomQuotaWindowSettings
+                {
+                    Id = "window-1",
+                    Name = "额度",
+                    DataKind = platform.DataKind ?? CustomDataKind.UtilizationPercent,
+                    ValuePath = platform.ValuePath,
+                    ResetsAtPath = platform.ResetsAtPath,
+                    ResetTimeKind = CustomResetTimeKind.Auto,
+                    Unit = platform.Currency,
+                    SortOrder = 0,
+                },
+            ];
+            migratedAny = true;
+        }
+
+        if (!migratedAny)
+        {
+            return;
+        }
+
+        // 备份迁移前的信封快照（与 schema 版本备份用不同后缀，避免文件名撞车），再重写为新格式。
+        TryBackup($"{_settingsPath}.custom-quota-migrate.bak");
+
+        // 旧字段迁移完成后清空，避免下次加载重复识别成"待迁移"（QuotaWindows 已非空会被上面的
+        // continue 挡住，这里清空纯粹是保持配置文件干净，不影响正确性）。
+        foreach (var platform in settings.CustomPlatforms ?? [])
+        {
+            if (platform.QuotaWindows is { Count: > 0 })
+            {
+                platform.ValuePath = null;
+                platform.ResetsAtPath = null;
+                platform.DataKind = null;
+                platform.Currency = null;
+            }
+        }
+
+        SaveCore(settings);
     }
 
     /// <summary>
@@ -147,6 +211,7 @@ public sealed class AppSettingsStore
 
         TryBackup($"{_settingsPath}.v0.bak");
         SaveCore(settings);
+        MigrateAndPersistIfNeeded(settings);
         return settings;
     }
 

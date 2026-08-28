@@ -42,6 +42,19 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
     public IRelayCommand MoveCardUpCommand { get; }
     public IRelayCommand MoveCardDownCommand { get; }
 
+    /// <summary>
+    /// 额度百分比显示"剩余"还是"已用"，面板顶部一键切换，立即生效并持久化。纯展示层设置——
+    /// 底层数据（QuotaWindow 同时保存两个百分比）和查询/解析逻辑完全不受影响。
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplaySemanticLabel))]
+    private QuotaDisplaySemantic _displaySemantic;
+
+    /// <summary>切换按钮上显示的文案：念的是"当前显示的是什么"，点击后切到另一个。</summary>
+    public string DisplaySemanticLabel => DisplaySemantic == QuotaDisplaySemantic.Used ? "已用" : "剩余";
+
+    public IRelayCommand ToggleDisplaySemanticCommand { get; }
+
     /// <summary>面板标题行产品名后的版本号（如 "v1.0.3"）。与设置页 About 同源：程序集版本，避免手工改 UI 文本造成漂移。</summary>
     public string VersionText
     {
@@ -67,6 +80,7 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
         _settingsStore = settingsStore;
         _settings = initialSettings;
         _providerFactory = providerFactory;
+        _displaySemantic = initialSettings.QuotaDisplaySemantic;
 
         RefreshAllCommand = new AsyncRelayCommand(RefreshAllAsync);
         OpenSettingsCommand = new RelayCommand(() => SettingsRequested?.Invoke(this, EventArgs.Empty));
@@ -77,11 +91,12 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
             c => c is not null && Cards.IndexOf(c) > 0);
         MoveCardDownCommand = new RelayCommand<ProviderCardViewModel>(c => MoveCard(c, +1),
             c => c is not null && Cards.IndexOf(c) is var i && i >= 0 && i < Cards.Count - 1);
+        ToggleDisplaySemanticCommand = new RelayCommand(ToggleDisplaySemantic);
 
         // 初始顺序：Claude → Codex → MiniMax → DeepSeek（文档 §5.4），随后按设置里的 PlatformOrder 重排。
         foreach (var id in _coordinator.ProviderIds)
         {
-            Cards.Add(new ProviderCardViewModel(id, DisplayNameFor(id), () => RefreshOneAsync(id)));
+            Cards.Add(CreateCard(id));
         }
 
         ApplyPlatformOrder(_settings.PlatformOrder);
@@ -157,7 +172,43 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
         ReconcileCards();
         ApplyPlatformOrder(settings.PlatformOrder);
         ApplyAutoRefreshInterval(settings.AutoRefreshIntervalMinutes);
+
+        // 显示语义现在只由面板自己的切换按钮调整并即时持久化（同 PlatformOrder），正常情况下
+        // 打开设置页时读到的就是这个值，这里同步一次纯粹是防御性收口，不依赖调用顺序。
+        if (DisplaySemantic != settings.QuotaDisplaySemantic)
+        {
+            DisplaySemantic = settings.QuotaDisplaySemantic;
+            foreach (var card in Cards)
+            {
+                card.UpdateDisplaySemantic(DisplaySemantic);
+            }
+        }
+
         TickAll();
+    }
+
+    /// <summary>面板顶部"剩余/已用"切换：立即生效并持久化，不触发任何网络请求。</summary>
+    private void ToggleDisplaySemantic()
+    {
+        DisplaySemantic = DisplaySemantic == QuotaDisplaySemantic.Used
+            ? QuotaDisplaySemantic.Remaining
+            : QuotaDisplaySemantic.Used;
+
+        _settings.QuotaDisplaySemantic = DisplaySemantic;
+        _settingsStore.Save(_settings);
+
+        foreach (var card in Cards)
+        {
+            card.UpdateDisplaySemantic(DisplaySemantic);
+        }
+    }
+
+    /// <summary>新建一张卡片并套用当前的显示语义，避免新卡片在下一次 Apply() 之前短暂地用错默认值。</summary>
+    private ProviderCardViewModel CreateCard(string id)
+    {
+        var card = new ProviderCardViewModel(id, DisplayNameFor(id), () => RefreshOneAsync(id));
+        card.UpdateDisplaySemantic(DisplaySemantic);
+        return card;
     }
 
     /// <summary>
@@ -180,7 +231,7 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
         {
             if (Cards.All(c => c.ProviderId != id))
             {
-                Cards.Add(new ProviderCardViewModel(id, DisplayNameFor(id), () => RefreshOneAsync(id)));
+                Cards.Add(CreateCard(id));
             }
         }
 

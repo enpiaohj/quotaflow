@@ -96,9 +96,12 @@ public partial class App : Application
             () => _credentialStore.TryRead(SettingsViewModel.DeepSeekKeyName),
             settings.DeepSeekEndpointOverride);
 
-        // 设置页手动添加的自定义平台（OpenCode / GO 等）。Id 固定为 custom-{n}，凭据键由此派生；
-        // 防御性跳过配置残缺（Id/地址/取值路径为空、撞内置 Id、重复自定义 Id）的条目，
+        // 设置页手动添加的自定义平台（OpenCode GO 等）。Id 固定为 custom-{n}，凭据键由此派生；
+        // 防御性跳过配置残缺（Id/地址为空、撞内置 Id、重复自定义 Id、一个额度窗口都没有）的条目，
         // 不会让一条坏配置拖垮其余平台。
+        // 注意：QuotaWindows 为空不代表"v1.0.5 旧格式尚未迁移"——AppSettingsStore.Load() 已经在
+        // 读盘时就地完成了迁移，这里读到的 settings 永远是迁移后的新格式；空列表只可能是配置文件
+        // 被手改坏，理应跳过。
         var builtInIds = new HashSet<string> { "claude", "codex", "minimax", "deepseek" };
         var seenIds = new HashSet<string>();
         foreach (var custom in settings.CustomPlatforms ?? [])
@@ -107,7 +110,7 @@ public partial class App : Application
                 builtInIds.Contains(custom.Id) ||
                 !seenIds.Add(custom.Id) ||
                 string.IsNullOrWhiteSpace(custom.Endpoint) ||
-                string.IsNullOrWhiteSpace(custom.ValuePath))
+                custom.QuotaWindows.Count == 0)
             {
                 continue;
             }

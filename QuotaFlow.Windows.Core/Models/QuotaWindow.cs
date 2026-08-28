@@ -17,6 +17,12 @@ namespace QuotaFlow.Windows.Core.Models;
 /// <param name="ResetsAt">窗口重置时间；服务端未提供时为 null，不得臆造。</param>
 /// <param name="UsedValueUsd">部分平台（如 ZenMux）额外提供的已用美元额度，非必填。</param>
 /// <param name="MaxValueUsd">部分平台额外提供的美元额度上限，非必填。</param>
+/// <param name="ErrorMessage">
+/// 非 null 时表示这个窗口本身解析失败（如取值路径找不到/非数字），<see cref="RemainingPercent"/> /
+/// <see cref="UsedPercent"/> 只是占位值（恒为 0），UI 必须先检查本字段、绝不能把占位值当成真实的
+/// "0% 剩余"展示——这是多窗口场景下"单个窗口异常不影响其他窗口"的关键：该窗口所在行显示
+/// "数据不可用" + 本消息，其余窗口正常渲染。内置四平台的窗口从不产生这种半失败状态。
+/// </param>
 public sealed record QuotaWindow(
     string Id,
     string DisplayName,
@@ -24,8 +30,19 @@ public sealed record QuotaWindow(
     double UsedPercent,
     DateTimeOffset? ResetsAt,
     double? UsedValueUsd = null,
-    double? MaxValueUsd = null)
+    double? MaxValueUsd = null,
+    string? ErrorMessage = null)
 {
+    /// <summary>是否为解析失败的占位窗口——UI 据此渲染"数据不可用"而不是进度条。</summary>
+    public bool IsError => ErrorMessage is not null;
+
+    /// <summary>
+    /// 构造一个"该窗口解析失败"的占位条目：窗口的 Name/Id 仍然显示出来（用户知道是哪个窗口出了问题），
+    /// 但不带任何百分比数据。绝不能把这种条目的 RemainingPercent/UsedPercent 当真实数据使用。
+    /// </summary>
+    public static QuotaWindow FromError(string id, string displayName, string errorMessage) =>
+        new(id, displayName, 0, 0, null, ErrorMessage: errorMessage);
+
     /// <summary>
     /// 由"已使用百分比"构造一个窗口，自动完成 remaining = 100 - utilization 的换算，
     /// 并把结果裁剪到 [0, 100]，防止服务端返回异常值（如轻微超过 100 或负数）污染 UI。

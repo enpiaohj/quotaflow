@@ -89,13 +89,19 @@ public sealed class AppSettingsStoreTests : IDisposable
             ClaudeEndpointOverride = "https://secret-override.example/usage",
             CustomPlatforms =
             [
-                new CustomPlatformSettings { Id = "custom-1", Name = "OpenCode", Endpoint = "https://opencode.example", ValuePath = "data.quota" },
+                new CustomPlatformSettings
+                {
+                    Id = "custom-1",
+                    Name = "OpenCode GO",
+                    Endpoint = "https://opencode.example",
+                    QuotaWindows = [new CustomQuotaWindowSettings { Id = "window-1", Name = "额度", ValuePath = "data.quota" }],
+                },
             ],
         });
 
         var text = File.ReadAllText(_path);
 
-        // 信封元信息可见，但明文内容（含自定义平台定义）绝不能落盘。
+        // 信封元信息可见，但明文内容（含自定义平台定义/窗口配置）绝不能落盘。
         Assert.Contains("schemaVersion", text);
         Assert.Contains("dpapi-user-v1", text);
         Assert.Contains("\"payload\"", text);
@@ -104,11 +110,12 @@ public sealed class AppSettingsStoreTests : IDisposable
         Assert.DoesNotContain("secret-override.example", text);
         Assert.DoesNotContain("theme", text);
         Assert.DoesNotContain("customPlatforms", text);
+        Assert.DoesNotContain("quotaWindows", text);
         Assert.DoesNotContain("opencode.example", text);
     }
 
     [Fact]
-    public void SaveThenLoad_RoundTripsCustomPlatforms()
+    public void SaveThenLoad_RoundTripsCustomPlatforms_NewMultiWindowFormat()
     {
         var original = new AppSettings
         {
@@ -117,14 +124,33 @@ public sealed class AppSettingsStoreTests : IDisposable
                 new CustomPlatformSettings
                 {
                     Id = "custom-1",
-                    Name = "OpenCode",
+                    Name = "OpenCode GO",
                     Endpoint = "https://opencode.example/api/usage",
                     AuthKind = CustomAuthKind.CustomHeader,
                     HeaderName = "X-API-Key",
-                    DataKind = CustomDataKind.Balance,
-                    ValuePath = "data.balance",
-                    ResetsAtPath = "data.updated_at",
-                    Currency = "USD",
+                    QuotaWindows =
+                    [
+                        new CustomQuotaWindowSettings
+                        {
+                            Id = "window-1",
+                            Name = "5 小时",
+                            DataKind = CustomDataKind.UtilizationPercent,
+                            ValuePath = "usage.rolling.percent",
+                            ResetsAtPath = "usage.rolling.resetsAt",
+                            ResetTimeKind = CustomResetTimeKind.Absolute,
+                            SortOrder = 0,
+                        },
+                        new CustomQuotaWindowSettings
+                        {
+                            Id = "window-2",
+                            Name = "每周",
+                            DataKind = CustomDataKind.RemainingValue,
+                            ValuePath = "usage.weekly.remaining",
+                            LimitPath = "usage.weekly.limit",
+                            Unit = "次",
+                            SortOrder = 1,
+                        },
+                    ],
                 },
                 new CustomPlatformSettings
                 {
@@ -132,8 +158,14 @@ public sealed class AppSettingsStoreTests : IDisposable
                     Name = "GO",
                     Endpoint = "https://go.example/usage",
                     AuthKind = CustomAuthKind.None,
-                    DataKind = CustomDataKind.RemainingPercent,
-                    ValuePath = "data.quota_left",
+                    QuotaWindows =
+                    [
+                        new CustomQuotaWindowSettings
+                        {
+                            Id = "window-1", Name = "余额", DataKind = CustomDataKind.Balance,
+                            ValuePath = "data.balance", Unit = "USD", SortOrder = 0,
+                        },
+                    ],
                 },
             ],
         };
@@ -145,20 +177,95 @@ public sealed class AppSettingsStoreTests : IDisposable
 
         var first = loaded.CustomPlatforms[0];
         Assert.Equal("custom-1", first.Id);
-        Assert.Equal("OpenCode", first.Name);
+        Assert.Equal("OpenCode GO", first.Name);
         Assert.Equal("https://opencode.example/api/usage", first.Endpoint);
         Assert.Equal(CustomAuthKind.CustomHeader, first.AuthKind);
         Assert.Equal("X-API-Key", first.HeaderName);
-        Assert.Equal(CustomDataKind.Balance, first.DataKind);
-        Assert.Equal("data.balance", first.ValuePath);
-        Assert.Equal("data.updated_at", first.ResetsAtPath);
-        Assert.Equal("USD", first.Currency);
+        Assert.Equal(2, first.QuotaWindows.Count);
+        Assert.Equal("window-1", first.QuotaWindows[0].Id);
+        Assert.Equal("5 小时", first.QuotaWindows[0].Name);
+        Assert.Equal(CustomDataKind.UtilizationPercent, first.QuotaWindows[0].DataKind);
+        Assert.Equal("usage.rolling.percent", first.QuotaWindows[0].ValuePath);
+        Assert.Equal("usage.rolling.resetsAt", first.QuotaWindows[0].ResetsAtPath);
+        Assert.Equal(CustomResetTimeKind.Absolute, first.QuotaWindows[0].ResetTimeKind);
+        Assert.Equal(CustomDataKind.RemainingValue, first.QuotaWindows[1].DataKind);
+        Assert.Equal("usage.weekly.limit", first.QuotaWindows[1].LimitPath);
+        Assert.Equal("次", first.QuotaWindows[1].Unit);
 
         var second = loaded.CustomPlatforms[1];
         Assert.Equal("custom-2", second.Id);
-        Assert.Equal("GO", second.Name);
-        Assert.Equal(CustomAuthKind.None, second.AuthKind);
-        Assert.Equal(CustomDataKind.RemainingPercent, second.DataKind);
+        Assert.Single(second.QuotaWindows);
+        Assert.Equal(CustomDataKind.Balance, second.QuotaWindows[0].DataKind);
+        Assert.Equal("USD", second.QuotaWindows[0].Unit);
+    }
+
+    [Fact]
+    public void Load_LegacyCustomPlatform_MigratesToQuotaWindows_PreservesIdAndBacksUp()
+    {
+        // 模拟 v1.0.5 保存下来的单窗口旧格式：QuotaWindows 为空，旧字段有值。
+        // Save() 本身不做迁移，原样落盘旧格式（相当于"这是 v1.0.5 写下的文件"）。
+        var legacy = new AppSettings
+        {
+            CustomPlatforms =
+            [
+                new CustomPlatformSettings
+                {
+                    Id = "custom-7",
+                    Name = "OpenCode",
+                    Endpoint = "https://opencode.example/api/usage",
+                    AuthKind = CustomAuthKind.BearerKey,
+                    DataKind = CustomDataKind.RemainingPercent,
+                    ValuePath = "data.quota_left",
+                    ResetsAtPath = "data.resets_at",
+                    Currency = "USD",
+                },
+            ],
+        };
+        _store.Save(legacy);
+
+        var migrated = _store.Load(); // 加载时就地迁移并重写
+
+        var platform = Assert.Single(migrated.CustomPlatforms!);
+        Assert.Equal("custom-7", platform.Id); // Id 不变 -> 凭据键 custom:custom-7:ApiKey 不变 -> 不丢 API Key
+        Assert.Equal("OpenCode", platform.Name);
+        Assert.Equal("https://opencode.example/api/usage", platform.Endpoint);
+        Assert.Equal(CustomAuthKind.BearerKey, platform.AuthKind);
+
+        var window = Assert.Single(platform.QuotaWindows);
+        Assert.Equal(CustomDataKind.RemainingPercent, window.DataKind);
+        Assert.Equal("data.quota_left", window.ValuePath);
+        Assert.Equal("data.resets_at", window.ResetsAtPath);
+        Assert.Equal("USD", window.Unit); // 旧 Currency 迁移进新的 Unit
+        Assert.Equal(CustomResetTimeKind.Auto, window.ResetTimeKind);
+
+        // 旧字段迁移后被清空，避免下次加载重复识别成"待迁移"。
+        Assert.Null(platform.ValuePath);
+        Assert.Null(platform.DataKind);
+        Assert.Null(platform.ResetsAtPath);
+        Assert.Null(platform.Currency);
+
+        // 迁移前的信封快照被保留，供排查（"保存新格式前提供安全回退"）。
+        Assert.True(File.Exists(Path.Combine(_dir, "settings.json.custom-quota-migrate.bak")));
+
+        // 迁移后主文件已是新格式：再次加载不产生重复迁移，也不产生重复平台条目。
+        var reloaded = _store.Load();
+        Assert.Single(reloaded.CustomPlatforms!);
+        Assert.Single(reloaded.CustomPlatforms![0].QuotaWindows);
+    }
+
+    [Fact]
+    public void Load_LegacyCustomPlatformWithoutValuePath_StaysEmptyQuotaWindows_DoesNotCrash()
+    {
+        // 手改配置留下的空条目（没有 ValuePath 可迁移）：不应该崩溃，也不应该凭空生成一个窗口。
+        var legacy = new AppSettings
+        {
+            CustomPlatforms = [new CustomPlatformSettings { Id = "custom-1", Name = "Broken", Endpoint = "https://x.example" }],
+        };
+        _store.Save(legacy);
+
+        var loaded = _store.Load();
+
+        Assert.Empty(Assert.Single(loaded.CustomPlatforms!).QuotaWindows);
     }
 
     [Fact]

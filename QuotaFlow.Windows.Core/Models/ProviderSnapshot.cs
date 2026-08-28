@@ -42,8 +42,16 @@ public sealed record ProviderSnapshot
 
     /// <summary>
     /// 快照中"最紧张"的剩余百分比（多个窗口取最小值），用于托盘图标/汇总视图判断整体健康度。
-    /// 没有任何窗口时返回 null，调用方不得当作 0% 处理。
+    /// 只统计成功解析的窗口（<see cref="QuotaWindow.IsError"/> == false）——某个窗口取值失败时，
+    /// 它的占位 0% 绝不能被当成"这个平台只剩 0% 了"。全部窗口都失败或没有任何窗口时返回 null，
+    /// 调用方不得当作 0% 处理。
     /// </summary>
-    public double? WorstRemainingPercent =>
-        QuotaWindows.Count == 0 ? null : QuotaWindows.Min(w => w.RemainingPercent);
+    public double? WorstRemainingPercent
+    {
+        get
+        {
+            var healthy = QuotaWindows.Where(w => !w.IsError).ToList();
+            return healthy.Count == 0 ? null : healthy.Min(w => w.RemainingPercent);
+        }
+    }
 }

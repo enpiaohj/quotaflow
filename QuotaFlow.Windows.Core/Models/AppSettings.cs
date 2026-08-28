@@ -32,6 +32,19 @@ public enum ClockDisplayFormat
 }
 
 /// <summary>
+/// 额度窗口百分比的显示语义：QuotaWindow 内部一直同时保存已用/剩余两个百分比，这里只是
+/// 决定 UI 上念哪一个数字，不影响任何平台的查询/解析逻辑。面板顶部可一键切换，全局生效。
+/// </summary>
+public enum QuotaDisplaySemantic
+{
+    /// <summary>显示剩余百分比（默认，此前一直是唯一行为）。</summary>
+    Remaining,
+
+    /// <summary>显示已使用百分比。</summary>
+    Used,
+}
+
+/// <summary>
 /// 非敏感的应用设置（不含任何密钥），经 <see cref="Services.AppSettingsStore"/> 以 DPAPI 加密信封
 /// 持久化到磁盘。密钥仍只走 Windows 凭据管理器，本模型不承载任何密钥字段。
 /// </summary>
@@ -51,6 +64,12 @@ public sealed class AppSettings
 
     /// <summary>面板顶部日期/时间显示格式，默认完整模式（日期+周几+第几周+实时时间）。</summary>
     public ClockDisplayFormat ClockDisplayFormat { get; set; } = ClockDisplayFormat.Full;
+
+    /// <summary>
+    /// 额度窗口百分比显示"已用"还是"剩余"，默认剩余（与升级前行为一致）。面板上可直接切换，
+    /// 立即持久化生效，纯展示层设置，不影响查询/解析。
+    /// </summary>
+    public QuotaDisplaySemantic QuotaDisplaySemantic { get; set; } = QuotaDisplaySemantic.Remaining;
 
     /// <summary>MiniMax 站点区域，默认国内站。</summary>
     public MiniMaxRegion MiniMaxRegion { get; set; } = MiniMaxRegion.China;
