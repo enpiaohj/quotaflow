@@ -36,6 +36,10 @@ public sealed partial class ProviderCardViewModel : ObservableObject
 
     public ObservableCollection<QuotaWindowViewModel> Windows { get; } = [];
 
+    /// <summary>桌面看板紧凑行的只读展示适配层（文档"桌面看板模式重构"）。跟这张卡片同生命周期，
+    /// 不是另起一份数据——只是把这张卡片已有的状态重新取景成一行能放下的形状，见其类型注释。</summary>
+    public CompactProviderRowViewModel Compact { get; }
+
     public string? DataSource => _lastSnapshot?.DataSource;
 
     /// <summary>
@@ -64,6 +68,7 @@ public sealed partial class ProviderCardViewModel : ObservableObject
         _refreshCallback = refreshCallback;
         RefreshCommand = new AsyncRelayCommand(ExecuteRefreshAsync);
         ToggleExpandCommand = new RelayCommand(() => IsExpanded = !IsExpanded);
+        Compact = new CompactProviderRowViewModel(this);
     }
 
     private async Task ExecuteRefreshAsync()
@@ -112,6 +117,7 @@ public sealed partial class ProviderCardViewModel : ObservableObject
 
         OnPropertyChanged(nameof(DataSource));
         UpdateLastUpdatedText(DateTimeOffset.UtcNow);
+        Compact.Refresh();
     }
 
     /// <summary>
@@ -135,6 +141,7 @@ public sealed partial class ProviderCardViewModel : ObservableObject
         }
 
         UpdateLastUpdatedText(now);
+        Compact.Refresh();
     }
 
     private void UpdateLastUpdatedText(DateTimeOffset now)

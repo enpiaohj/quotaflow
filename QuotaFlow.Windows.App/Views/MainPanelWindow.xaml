@@ -9,7 +9,9 @@
         ShowInTaskbar="False" Topmost="True" ResizeMode="NoResize"
         WindowStartupLocation="Manual"
         Deactivated="OnDeactivated"
-        KeyDown="OnKeyDown">
+        KeyDown="OnKeyDown"
+        MouseEnter="OnWindowMouseEnter"
+        MouseLeave="OnWindowMouseLeave">
 
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
@@ -183,6 +185,90 @@
                 </StackPanel>
             </Border>
         </DataTemplate>
+
+        <!-- ==================== 桌面看板紧凑行（独立视觉树，不复用上面的 ProviderCardTemplate）====================
+             ItemsSource 仍然绑定同一个 Cards 集合（同一份数据源、同一套排序/可见性规则），只是
+             DataTemplate 换成完全不同的、扁平化的一行——数据取自 ProviderCardViewModel.Compact
+             这个只读适配层（CompactProviderRowViewModel），不重新解析任何 Provider 数据。 -->
+        <Style x:Key="Style.CompactToolbarButton" TargetType="Button" BasedOn="{StaticResource Style.IconButton}">
+            <Setter Property="Width" Value="24" />
+            <Setter Property="Height" Value="24" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+
+        <DataTemplate x:Key="CompactProviderRowTemplate" DataType="{x:Type vm:ProviderCardViewModel}">
+            <Border Visibility="{Binding Visibility}" BorderThickness="0,0,0,1"
+                    BorderBrush="{DynamicResource Brush.Divider}" Padding="2,5" MinHeight="42">
+                <Border.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="刷新此平台" Command="{Binding Compact.RefreshCommand}" />
+                    </ContextMenu>
+                </Border.ContextMenu>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="58" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <Ellipse Grid.Row="0" Grid.Column="0" Width="7" Height="7" Margin="0,0,6,0"
+                             VerticalAlignment="Center"
+                             Fill="{Binding Compact.StatusKind, Converter={StaticResource StatusKindToBrush}}"
+                             ToolTip="{Binding Compact.DetailsTooltip}" />
+
+                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding DisplayName}" VerticalAlignment="Center"
+                               FontSize="12" FontWeight="Medium" TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource Brush.TextPrimary}" ToolTip="{Binding DisplayName}" />
+
+                    <!-- 额度窗口型（Claude/Codex/MiniMax）：主窗口% + 次窗口%，不铺满整行的进度条——
+                         百分比数字是第一视觉层，这里不放条（文档 §7.1）。 -->
+                    <StackPanel Grid.Row="0" Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right"
+                                Visibility="{Binding Compact.IsWindowRow, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="{Binding Compact.PrimaryWindow.PercentText}" FontSize="13" FontWeight="SemiBold"
+                                   FontFamily="{StaticResource Font.Numeric}"
+                                   Foreground="{Binding Compact.PrimaryWindow.StatusKind, Converter={StaticResource StatusKindToBrush}}"
+                                   ToolTip="{Binding Compact.PrimaryWindow.DisplayName}"
+                                   Visibility="{Binding Compact.HasPrimary, Converter={StaticResource BoolToVis}}" />
+                        <TextBlock Text="{Binding Compact.SecondaryWindow.PercentText}" FontSize="13" FontWeight="SemiBold"
+                                   FontFamily="{StaticResource Font.Numeric}" Margin="10,0,0,0"
+                                   Foreground="{Binding Compact.SecondaryWindow.StatusKind, Converter={StaticResource StatusKindToBrush}}"
+                                   ToolTip="{Binding Compact.SecondaryWindow.DisplayName}"
+                                   Visibility="{Binding Compact.HasSecondary, Converter={StaticResource BoolToVis}}" />
+                    </StackPanel>
+
+                    <!-- 余额型（DeepSeek）：币种 + 金额，不伪造 5h/7d 进度条（文档 §7.2）。 -->
+                    <StackPanel Grid.Row="0" Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right"
+                                Visibility="{Binding Compact.IsBalanceRow, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="{Binding Compact.BalanceCurrencyText}" FontSize="11" VerticalAlignment="Bottom" Margin="0,0,3,1"
+                                   Foreground="{DynamicResource Brush.TextSecondary}" />
+                        <TextBlock Text="{Binding Compact.BalanceAmountText}" FontSize="13" FontWeight="SemiBold"
+                                   FontFamily="{StaticResource Font.Numeric}"
+                                   Foreground="{DynamicResource Brush.TextPrimary}" />
+                    </StackPanel>
+
+                    <!-- 额外窗口折叠为 +N，悬停/点击展开详情浮层（文档 §8）。 -->
+                    <TextBlock Grid.Row="0" Grid.Column="3" Margin="8,0,0,0" VerticalAlignment="Center"
+                               FontSize="10" Foreground="{DynamicResource Brush.TextTertiary}"
+                               Text="{Binding Compact.ExtraWindowCount, StringFormat=+{0}}"
+                               ToolTip="{Binding Compact.DetailsTooltip}"
+                               Visibility="{Binding Compact.HasExtraWindows, Converter={StaticResource BoolToVis}}" />
+
+                    <!-- 状态文案：点名具体是哪个窗口异常（"5 小时额度告急"/"周额度偏低"……），
+                         而不是笼统的"紧张"；正常时不显示文字，只靠左侧状态点表达（文档 §9）。 -->
+                    <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Margin="0,2,0,0"
+                               FontSize="10" TextTrimming="CharacterEllipsis"
+                               Text="{Binding Compact.StatusText}"
+                               Foreground="{Binding Compact.StatusKind, Converter={StaticResource StatusKindToBrush}}"
+                               ToolTip="{Binding Compact.DetailsTooltip}"
+                               Visibility="{Binding Compact.StatusText, Converter={StaticResource NotEmptyToVis}}" />
+                </Grid>
+            </Border>
+        </DataTemplate>
     </Window.Resources>
 
     <Grid>
@@ -191,7 +277,8 @@
              不会因为背景变淡而跟着变得难以辨认（文档 §8.2）。 -->
         <Border x:Name="PanelBackgroundLayer" Style="{StaticResource Style.PanelShell}" />
 
-        <DockPanel Margin="16,14,16,12">
+        <DockPanel Margin="16,14,16,12"
+                   Visibility="{Binding IsDesktopPanelMode, Converter={StaticResource InverseBoolToVis}}">
             <!-- 顶部区域：整块区域是拖动手柄（悬浮/桌面看板模式下 IsDraggable=true 时生效），
                  按钮位于其上层，Button 会在 MouseLeftButtonDown 时自行标记 Handled，
                  点击按钮不会触发拖动。 -->
@@ -314,6 +401,95 @@
                         </StackPanel>
                     </Border>
                 </StackPanel>
+            </ScrollViewer>
+        </DockPanel>
+
+        <!-- ==================== 桌面看板：独立紧凑视觉树（文档 §4） ====================
+             不复用上面标准视图的任何元素——顶部只保留产品名+紧凑更新时间，四个平台用扁平行，
+             默认不出现滚动条，工具栏常态透明、鼠标移入后淡入。 -->
+        <DockPanel Margin="12,8,12,8"
+                   Visibility="{Binding IsDesktopPanelMode, Converter={StaticResource BoolToVis}}">
+            <!-- DesktopPanelHeader：QuotaFlow + 紧凑更新时间；同一块区域仍然是拖动手柄。 -->
+            <Grid x:Name="DesktopPanelHeader" DockPanel.Dock="Top" Height="28" Margin="0,0,0,6"
+                  Background="Transparent" MouseLeftButtonDown="OnHeaderMouseLeftButtonDown">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0" Text="QuotaFlow" VerticalAlignment="Center"
+                           FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextPrimary}"
+                           ToolTip="{Binding VersionText}" />
+
+                <!-- 常态：紧凑更新时间（"刚刚 / 5 分钟前 / 数据过期"）。 -->
+                <TextBlock x:Name="CompactHeaderTimeBlock" Grid.Column="1" VerticalAlignment="Center"
+                           Text="{Binding CompactHeaderTimeText}" FontSize="11"
+                           Foreground="{DynamicResource Brush.TextTertiary}"
+                           ToolTip="{Binding HeaderLastUpdatedText}" />
+
+                <!-- 悬停工具栏：与上面的时间文案叠在同一个格子里，常态 Opacity=0 且不接受鼠标点击
+                     （IsHitTestVisible=False 只挡鼠标，键盘 Tab 仍能对焦到里面的按钮——文档 §16
+                     "隐藏工具栏不能让键盘用户无法退出桌面看板"）。淡入淡出由 MainPanelWindow.xaml.cs
+                     跟随整个窗口的 MouseEnter/MouseLeave 驱动，尊重 Windows"减少动画"设置。 -->
+                <StackPanel x:Name="HoverToolbar" Grid.Column="1" Orientation="Horizontal"
+                            Opacity="0" IsHitTestVisible="False" Background="{DynamicResource Brush.PanelBackground}">
+                    <Button Style="{StaticResource Style.CompactToolbarButton}" Content="&#8635;" ToolTip="刷新全部"
+                            AutomationProperties.AutomationId="CompactRefreshAllButton"
+                            Command="{Binding RefreshAllCommand}" />
+                    <Button Content="&#128280;" ToolTip="始终置顶"
+                            AutomationProperties.AutomationId="CompactAlwaysOnTopButton"
+                            Command="{Binding ToggleAlwaysOnTopCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource Style.CompactToolbarButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsAlwaysOnTop}" Value="True">
+                                        <Setter Property="Foreground" Value="{DynamicResource Brush.AccentDeepSeek}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <Button AutomationProperties.AutomationId="CompactPositionLockButton"
+                            Command="{Binding TogglePositionLockedCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource Style.CompactToolbarButton}">
+                                <Setter Property="Content" Value="&#128275;" />
+                                <Setter Property="ToolTip" Value="位置锁定（已解锁，点击锁定）" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsPositionLocked}" Value="True">
+                                        <Setter Property="Content" Value="&#128274;" />
+                                        <Setter Property="ToolTip" Value="位置已锁定，点击解锁" />
+                                        <Setter Property="Foreground" Value="{DynamicResource Brush.AccentDeepSeek}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <Button Style="{StaticResource Style.CompactToolbarButton}" Content="{Binding ModeGlyph}"
+                            ToolTip="{Binding ModeTooltip}"
+                            AutomationProperties.AutomationId="CompactCycleModeButton"
+                            Command="{Binding CycleDisplayModeCommand}" />
+                    <Button Style="{StaticResource Style.CompactToolbarButton}" Content="&#8943;" ToolTip="更多"
+                            AutomationProperties.AutomationId="CompactMoreMenuButton"
+                            Click="OnCompactMoreMenuClick">
+                        <Button.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="打开设置" Click="OnOpenSettingsClick" />
+                                <MenuItem Header="恢复默认窗口位置" Command="{Binding RestoreDefaultPositionCommand}" />
+                                <MenuItem Header="切换标准/紧凑布局" Command="{Binding ToggleCompactLayoutCommand}" />
+                                <Separator />
+                                <MenuItem Header="退出桌面看板（切回悬浮窗口）" Command="{Binding ExitDesktopPanelCommand}" />
+                                <MenuItem Header="退出应用" Command="{Binding ExitCommand}" />
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                    </Button>
+                </StackPanel>
+            </Grid>
+
+            <!-- CompactProviderList：默认不出现滚动条，只有平台数量超出设计容量等极端情况才会出现
+                 （文档 §11，Auto 在内容未溢出时不占宽度、不显示滚动条本身）。 -->
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ItemsControl ItemsSource="{Binding Cards}" ItemTemplate="{StaticResource CompactProviderRowTemplate}" />
             </ScrollViewer>
         </DockPanel>
     </Grid>

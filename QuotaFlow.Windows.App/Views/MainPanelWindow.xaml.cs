@@ -1,8 +1,11 @@
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Threading;
 using QuotaFlow.Windows.App.Services;
 using QuotaFlow.Windows.App.ViewModels;
+using QuotaFlow.Windows.Core.Models;
 using QuotaFlow.Windows.Core.Services;
 
 namespace QuotaFlow.Windows.App.Views;
@@ -18,6 +21,14 @@ namespace QuotaFlow.Windows.App.Views;
 public partial class MainPanelWindow : Window
 {
     private bool _isDragInProgress;
+
+    /// <summary>桌面看板悬停工具栏的"移开后延迟收起"计时器——鼠标移开不是立刻淡出，等
+    /// <see cref="ToolbarHideDelay"/> 之后如果鼠标仍不在窗口内才开始淡出（文档 §10.2，
+    /// 避免"划过就消失"的频繁闪烁）。</summary>
+    private readonly DispatcherTimer _toolbarHideTimer = new() { Interval = TimeSpan.FromMilliseconds(650) };
+
+    private static readonly Duration ToolbarFadeInDuration = new(TimeSpan.FromMilliseconds(150));
+    private static readonly Duration ToolbarFadeOutDuration = new(TimeSpan.FromMilliseconds(180));
 
     public event EventHandler? SettingsRequested;
 
@@ -50,7 +61,102 @@ public partial class MainPanelWindow : Window
             {
                 IsPinned = viewModel.IsPinned;
             }
+            else if (e.PropertyName == nameof(MainPanelViewModel.CurrentMode))
+            {
+                // 每次重新进入桌面看板模式都从"工具栏隐藏"这个干净状态开始，不带着上次离开时
+                // 可能还没来得及淡出的可见状态——否则下次进入桌面看板模式时工具栏可能不经悬停
+                // 就已经显示，跟"常态透明、悬停才出现"的设计矛盾。
+                if (viewModel.CurrentMode != WindowPresentationMode.DesktopPanel)
+                {
+                    _toolbarHideTimer.Stop();
+                    ResetHoverToolbar();
+                }
+            }
         };
+
+        _toolbarHideTimer.Tick += (_, _) =>
+        {
+            _toolbarHideTimer.Stop();
+            HideHoverToolbar();
+        };
+    }
+
+    private void OnWindowMouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        _toolbarHideTimer.Stop();
+        if (DataContext is MainPanelViewModel { CurrentMode: WindowPresentationMode.DesktopPanel })
+        {
+            ShowHoverToolbar();
+        }
+    }
+
+    private void OnWindowMouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (DataContext is MainPanelViewModel { CurrentMode: WindowPresentationMode.DesktopPanel })
+        {
+            _toolbarHideTimer.Start();
+        }
+    }
+
+    /// <summary>鼠标移入窗口后 120～180ms 淡入悬停工具栏，同时把常态显示的紧凑更新时间淡出——
+    /// 两者叠在同一个格子里，用互补的不透明度切换，不需要额外的布局空间（文档 §10.2）。</summary>
+    private void ShowHoverToolbar()
+    {
+        if (HoverToolbar is null || CompactHeaderTimeBlock is null)
+        {
+            return;
+        }
+
+        HoverToolbar.IsHitTestVisible = true;
+        AnimateOpacity(HoverToolbar, 1.0, ToolbarFadeInDuration);
+        AnimateOpacity(CompactHeaderTimeBlock, 0.0, ToolbarFadeInDuration);
+    }
+
+    private void HideHoverToolbar()
+    {
+        if (HoverToolbar is null || CompactHeaderTimeBlock is null)
+        {
+            return;
+        }
+
+        HoverToolbar.IsHitTestVisible = false;
+        AnimateOpacity(HoverToolbar, 0.0, ToolbarFadeOutDuration);
+        AnimateOpacity(CompactHeaderTimeBlock, 1.0, ToolbarFadeOutDuration);
+    }
+
+    /// <summary>不带动画地把工具栏立即收回初始状态——用于"重新进入桌面看板模式"这种不该有过渡
+    /// 动画的场景，跟鼠标悬停触发的淡入淡出（<see cref="ShowHoverToolbar"/>/<see cref="HideHoverToolbar"/>）区分开。</summary>
+    private void ResetHoverToolbar()
+    {
+        if (HoverToolbar is null || CompactHeaderTimeBlock is null)
+        {
+            return;
+        }
+
+        HoverToolbar.IsHitTestVisible = false;
+        HoverToolbar.BeginAnimation(UIElement.OpacityProperty, null);
+        HoverToolbar.Opacity = 0;
+        CompactHeaderTimeBlock.BeginAnimation(UIElement.OpacityProperty, null);
+        CompactHeaderTimeBlock.Opacity = 1;
+    }
+
+    /// <summary>跟随 Windows"减少动画"系统设置（文档 §14）：该设置关闭时直接跳变到目标值，
+    /// 不播放渐变过渡，而不是无视系统偏好硬播一段动画。</summary>
+    private static void AnimateOpacity(UIElement element, double to, Duration duration)
+    {
+        var effectiveDuration = SystemParameters.ClientAreaAnimation ? duration : new Duration(TimeSpan.Zero);
+        element.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(to, effectiveDuration));
+    }
+
+    /// <summary>桌面看板悬停工具栏"更多"按钮：左键点击就弹出菜单（不是右键专属），
+    /// 复用 Button.ContextMenu 而不是另起一套 Popup。</summary>
+    private void OnCompactMoreMenuClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { ContextMenu: { } menu } element)
+        {
+            menu.PlacementTarget = element;
+            menu.IsOpen = true;
+        }
     }
 
     /// <summary>

@@ -95,6 +95,30 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
 
     public IAsyncRelayCommand CycleDisplayModeCommand { get; }
 
+    /// <summary>是否处于桌面看板模式——驱动 MainPanelWindow.xaml 里"标准视觉树"和"桌面看板紧凑
+    /// 视觉树"之间的切换（文档 §4：桌面看板不得继续复用完整 ProviderCardView 的视觉树）。</summary>
+    public bool IsDesktopPanelMode => CurrentMode == WindowPresentationMode.DesktopPanel;
+
+    /// <summary>桌面看板悬停工具栏里的"始终置顶"/"位置锁定"直接读写协调器，跟设置页"显示与窗口"
+    /// 卡片是同一份状态、同一套即时生效语义，不是另开一份开关。</summary>
+    public bool IsAlwaysOnTop => _presentation.IsAlwaysOnTop;
+    public bool IsPositionLocked => _presentation.IsPositionLocked;
+
+    public IRelayCommand ToggleAlwaysOnTopCommand { get; }
+    public IRelayCommand TogglePositionLockedCommand { get; }
+    public IRelayCommand ToggleCompactLayoutCommand { get; }
+    public IRelayCommand RestoreDefaultPositionCommand { get; }
+
+    /// <summary>悬停工具栏"更多菜单"里的"退出桌面看板"：回到悬浮窗口模式，而不是回到托盘弹出——
+    /// 桌面看板本来就是从悬浮窗口衍生出的常驻形态，退出后停在同样"常驻可见"的悬浮窗口更符合直觉，
+    /// 不会让窗口突然消失。</summary>
+    public IAsyncRelayCommand ExitDesktopPanelCommand { get; }
+
+    /// <summary>桌面看板紧凑顶部的更新时间文案："刚刚/5 分钟前/3 小时前"，比标准头部的
+    /// <see cref="HeaderLastUpdatedText"/> 更短（去掉"更新"二字），命中过期缓存时直接说
+    /// "数据过期"（文档 §6）。</summary>
+    [ObservableProperty] private string _compactHeaderTimeText = string.Empty;
+
     /// <summary>面板标题行产品名后的版本号（如 "v1.0.3"）。与设置页 About 同源：程序集版本，避免手工改 UI 文本造成漂移。</summary>
     public string VersionText
     {
@@ -132,6 +156,11 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
         OpenSettingsCommand = new RelayCommand(() => SettingsRequested?.Invoke(this, EventArgs.Empty));
         ExitCommand = new RelayCommand(() => ExitRequested?.Invoke(this, EventArgs.Empty));
         CycleDisplayModeCommand = new AsyncRelayCommand(CycleDisplayModeAsync);
+        ToggleAlwaysOnTopCommand = new RelayCommand(() => _presentation.SetAlwaysOnTop(!_presentation.IsAlwaysOnTop));
+        TogglePositionLockedCommand = new RelayCommand(() => _presentation.SetPositionLocked(!_presentation.IsPositionLocked));
+        ToggleCompactLayoutCommand = new RelayCommand(() => _presentation.SetCompactLayout(!_presentation.IsCompactLayout));
+        RestoreDefaultPositionCommand = new RelayCommand(_presentation.RestoreDefaultPosition);
+        ExitDesktopPanelCommand = new AsyncRelayCommand(_presentation.EnterFloatingAsync);
         // 先于下面的 ApplyPlatformOrder 构造：后者在任何卡片顺序变化后都会刷新这两个命令的
         // CanExecute（首/末位禁用对应箭头），如果晚于该调用赋值，ctor 里就会先撞上空引用。
         MoveCardUpCommand = new RelayCommand<ProviderCardViewModel>(c => MoveCard(c, -1),
@@ -391,6 +420,32 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
 
         // 面板顶部实时时钟：每秒刷新，格式由设置"日期显示格式"决定（UpdateSettings 后即时生效）。
         ClockText = ClockFormatter.Format(DateTimeOffset.Now, _settings.ClockDisplayFormat);
+
+        CompactHeaderTimeText = BuildCompactHeaderTimeText(now);
+    }
+
+    /// <summary>桌面看板紧凑头部的更新时间文案（文档 §6）：任意平台处于 Stale（缓存已超过新鲜度
+    /// 窗口）就直接说"数据过期"，比逐个平台去看更直接；否则用比标准头部更短的相对时间（去掉"更新"）。</summary>
+    private string BuildCompactHeaderTimeText(DateTimeOffset now)
+    {
+        if (Cards.Any(c => c.State == ProviderState.Stale))
+        {
+            return "数据过期";
+        }
+
+        if (_lastRefreshAllAt is not { } refreshedAt)
+        {
+            return string.Empty;
+        }
+
+        var delta = now - refreshedAt;
+        return delta switch
+        {
+            { } d when d.TotalMinutes < 1 => "刚刚",
+            { } d when d.TotalHours < 1 => $"{(int)d.TotalMinutes} 分钟前",
+            { } d when d.TotalDays < 1 => $"{(int)d.TotalHours} 小时前",
+            _ => $"{(int)delta.TotalDays} 天前",
+        };
     }
 
     private static string FormatRelative(TimeSpan delta) => delta switch
@@ -421,6 +476,9 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(IsCompactLayout));
         OnPropertyChanged(nameof(ModeGlyph));
         OnPropertyChanged(nameof(ModeTooltip));
+        OnPropertyChanged(nameof(IsDesktopPanelMode));
+        OnPropertyChanged(nameof(IsAlwaysOnTop));
+        OnPropertyChanged(nameof(IsPositionLocked));
     }
 
     /// <summary>顶部按钮：托盘弹出 → 悬浮 → 桌面看板 → 托盘弹出，循环切换。</summary>
