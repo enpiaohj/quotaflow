@@ -49,6 +49,11 @@ public partial class App : Application
         _cache = new LocalCache();
         _settingsStore = new AppSettingsStore();
 
+        // 必须在 Load() 之前查：Load() 对"文件不存在"这一支不会落盘任何东西，之后再查
+        // Exists() 依然是 false，没法用来判断"是不是第一次运行"。升级用户早就有这个文件，
+        // 不会被误判成首次运行——只有真·全新安装才会走下面的自动展示分支。
+        var isFirstRun = !_settingsStore.Exists();
+
         var settings = _settingsStore.Load();
         _themeManager.Apply(settings.Theme);
         SystemEvents.UserPreferenceChanged += OnSystemPreferenceChanged;
@@ -69,6 +74,18 @@ public partial class App : Application
         {
             _panelWindow.KeepVisibleOnDeactivate = true;
             _panelWindow.ShowNearTray();
+        }
+        else if (isFirstRun)
+        {
+            // 全新安装：只有一个新增的托盘图标，很容易被当成"没装上/没启动"（尤其图标默认还可能
+            // 被 Windows 折叠进溢出区）。首次启动主动展示一次面板，给用户一个"确实打开了"的
+            // 直接反馈；行为和普通点击托盘图标打开完全一样，点击外部照常自动收起，不强留。
+            _panelWindow.ShowNearTray();
+
+            // 必须立即落盘默认设置，否则用户这次只是看了一眼就点开别处收起（没碰过设置页/
+            // 拖过卡片顺序/切过显示语义），settings.json 依然不存在——下次启动 Exists() 还是
+            // false，会被再次误判成"首次运行"，面板就变成每次启动都弹一次，而不是只弹一次。
+            _settingsStore.Save(settings);
         }
 
         SetupTrayIcon();
