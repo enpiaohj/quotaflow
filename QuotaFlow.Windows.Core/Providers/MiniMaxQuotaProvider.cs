@@ -171,10 +171,13 @@ public sealed class MiniMaxQuotaProvider : IQuotaProvider
                 windows.Add(QuotaWindow.FromRemaining("five_hour", "5 小时", remainPercent, resetsAt));
             }
 
-            // 周窗口仅当 current_weekly_status == 1 时才是激活状态；否则该套餐没有周限额，
-            // 不应该展示一个恒为 100% 的假窗口。
+            // 周窗口在 current_weekly_status 为 1（正常）或 2（已用尽/受限）时展示，都是真实数据。
+            // 早期实现只认 == 1，把 2 也当成"这个套餐没有周限额"隐藏掉——但实测（真实账号，周额度
+            // 用尽）status=2 时 current_weekly_remaining_percent 是真实的 0%，不是占位符，
+            // 隐藏它反而会让用户看不到"周额度已经用完"这个真实且重要的信息。3 目前仅在无关的
+            // "video" 模型条目上观察到，继续按"不适用"处理。
             if (item2.TryGetProperty("current_weekly_status", out var weeklyStatusEl) &&
-                weeklyStatusEl.TryGetInt64(out var weeklyStatus) && weeklyStatus == 1 &&
+                weeklyStatusEl.TryGetInt64(out var weeklyStatus) && weeklyStatus is 1 or 2 &&
                 item2.TryGetProperty("current_weekly_remaining_percent", out var weeklyRemainEl) &&
                 weeklyRemainEl.TryGetDouble(out var weeklyRemainPercent))
             {

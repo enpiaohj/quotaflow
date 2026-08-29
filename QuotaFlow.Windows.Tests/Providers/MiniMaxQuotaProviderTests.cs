@@ -66,6 +66,28 @@ public class MiniMaxQuotaProviderTests
     }
 
     [Fact]
+    public void ParseResponse_WeeklyStatusExhausted_WeeklyWindowStillIncluded()
+    {
+        // 真实抓包：周额度用尽时 current_weekly_status 是 2（不是 1），
+        // current_weekly_remaining_percent 仍是真实的 0%——早期实现只认 status==1，
+        // 会把这个真实的"已用尽"数据当成"没有周限额"隐藏掉，看起来就像"minimax 只有 5 小时额度"。
+        var json = """
+            {
+              "base_resp": { "status_code": 0 },
+              "model_remains": [
+                { "model_name": "general", "current_interval_remaining_percent": 100, "current_weekly_status": 2, "current_weekly_remaining_percent": 0, "weekly_end_time": 1798500000000 }
+              ]
+            }
+            """;
+
+        var snapshot = CreateProvider().ParseResponse(json);
+
+        var weekly = Assert.Single(snapshot.QuotaWindows, w => w.Id == "weekly_limit");
+        Assert.Equal(0, weekly.RemainingPercent);
+        Assert.Equal(ProviderState.Exhausted, snapshot.State);
+    }
+
+    [Fact]
     public void ParseResponse_ZeroRemaining_ReturnsExhausted()
     {
         var json = """
