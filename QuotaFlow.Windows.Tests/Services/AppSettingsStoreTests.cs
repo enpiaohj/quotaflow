@@ -476,4 +476,34 @@ public sealed class AppSettingsStoreTests : IDisposable
         Assert.Null(settings.WindowDisplay.FloatingPlacement);
         Assert.Null(settings.WindowDisplay.DesktopPlacement);
     }
+
+    [Fact]
+    public void Save_PlacementContainsNonFiniteNumbers_DoesNotThrow()
+    {
+        // 实测事故：远程桌面等虚拟显示驱动偶尔报告 0 DPI，上游按 0 做除法产出的
+        // Infinity/NaN 一路带进 SavedWindowPlacement；System.Text.Json 默认拒绝序列化非有限
+        // 浮点数，会抛 ArgumentException——之前 SaveCore 的 catch 没接住这一种，导致
+        // "保存设置"这个不该致命的操作直接把调用方（应用启动路径）整个带崩。
+        // 产生 NaN/Infinity 的根因已经在别处堵上，这里验证 Save 本身对这类输入是安全的，
+        // 不会向上抛异常——这条防线不该依赖调用方永远不出错才成立。
+        var settings = new AppSettings
+        {
+            WindowDisplay = new WindowDisplaySettings
+            {
+                Mode = WindowPresentationMode.Floating,
+                FloatingPlacement = new SavedWindowPlacement
+                {
+                    MonitorDeviceName = "\\\\.\\DISPLAY-BROKEN",
+                    LeftDip = double.PositiveInfinity,
+                    TopDip = double.NaN,
+                    WidthDip = 320,
+                    HeightDip = 200,
+                },
+            },
+        };
+
+        var exception = Record.Exception(() => _store.Save(settings));
+
+        Assert.Null(exception);
+    }
 }

@@ -173,4 +173,47 @@ public class WindowPlacementCalculatorTests
 
         Assert.Null(result);
     }
+
+    // ---- 非有限数值防御（实测事故：虚拟/远程桌面显示驱动报告 0 DPI，上游按 0 做除法产出
+    //      Infinity/NaN，一路带进这里再写进配置文件时让 System.Text.Json 直接抛异常，
+    //      导致整个应用启动崩溃、连托盘图标都没创建） ----
+
+    [Fact]
+    public void Correct_MonitorHasZeroDpi_ReturnsFiniteFallback_DoesNotPropagateInfinity()
+    {
+        // 0 DPI 本身不该出现在 MonitorInfo 里（MonitorService 那一侧也已经堵住），但这里
+        // 单独验证：即使真的传进来一个非法显示器，Correct 也绝不能算出 NaN/Infinity。
+        var brokenMonitor = new MonitorInfo("\\\\.\\DISPLAY-BROKEN", double.PositiveInfinity, double.NaN, 1920, 1040, 0, 0, IsPrimary: true);
+
+        var result = WindowPlacementCalculator.Correct(null, [brokenMonitor], 320, 200);
+
+        Assert.True(double.IsFinite(result.LeftDip));
+        Assert.True(double.IsFinite(result.TopDip));
+        Assert.True(double.IsFinite(result.WidthDip));
+        Assert.True(double.IsFinite(result.HeightDip));
+        Assert.True(double.IsFinite(result.SavedDpiX));
+        Assert.True(double.IsFinite(result.SavedDpiY));
+    }
+
+    [Fact]
+    public void Correct_SavedPlacementHasNonFiniteCoordinates_TreatedAsNeverSaved()
+    {
+        // saved 本身已经携带了 NaN/Infinity（例如上一次崩溃前落盘的半成品状态）：
+        // Math.Clamp 对 NaN/Infinity 不生效，必须在使用前就识别出来，否则原样传播到结果里。
+        var saved = new SavedWindowPlacement
+        {
+            MonitorDeviceName = Primary.DeviceName,
+            LeftDip = double.NaN,
+            TopDip = double.PositiveInfinity,
+            WidthDip = double.NaN,
+            HeightDip = 200,
+        };
+
+        var result = WindowPlacementCalculator.Correct(saved, [Primary], 320, 200);
+
+        Assert.True(double.IsFinite(result.LeftDip));
+        Assert.True(double.IsFinite(result.TopDip));
+        Assert.True(double.IsFinite(result.WidthDip));
+        Assert.True(double.IsFinite(result.HeightDip));
+    }
 }

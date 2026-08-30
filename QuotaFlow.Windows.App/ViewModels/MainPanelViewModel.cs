@@ -25,7 +25,6 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
     private AppSettings _settings;
     private readonly DispatcherTimer _tickTimer;
     private DispatcherTimer? _autoRefreshTimer;
-    private DateTimeOffset? _lastRefreshAllAt;
 
     public ObservableCollection<ProviderCardViewModel> Cards { get; } = [];
 
@@ -228,7 +227,6 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
                 }
             }
 
-            _lastRefreshAllAt = DateTimeOffset.UtcNow;
             PersistCurrentSnapshots();
         }
         finally
@@ -409,7 +407,13 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
             card.Tick(now);
         }
 
-        HeaderLastUpdatedText = _lastRefreshAllAt is { } refreshedAt
+        // 头部"上次更新"时间不再单独记一个"刚刚点过刷新全部"的标记，而是直接从每张卡片
+        // 真实的快照时间里现算——RefreshCoordinator 的刷新冷却（同一平台短时间内复用上次结果）
+        // 生效后，"点了刷新全部"不再等价于"所有平台的数据都真的变新了"，继续用一个统一的
+        // "现在"时间戳会让头部显示"刚刚更新"，但某张卡片其实还是几秒/十几秒前的旧数据，
+        // 两处对不上。取所有可见卡片里最旧的那个时间，头部就永远不会比实际情况更"新"。
+        var lastUpdatedAt = ComputeAggregateLastUpdatedAt();
+        HeaderLastUpdatedText = lastUpdatedAt is { } refreshedAt
             ? FormatRelative(now - refreshedAt)
             : string.Empty;
 
@@ -421,19 +425,40 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
         // 面板顶部实时时钟：每秒刷新，格式由设置"日期显示格式"决定（UpdateSettings 后即时生效）。
         ClockText = ClockFormatter.Format(DateTimeOffset.Now, _settings.ClockDisplayFormat);
 
-        CompactHeaderTimeText = BuildCompactHeaderTimeText(now);
+        CompactHeaderTimeText = BuildCompactHeaderTimeText(now, lastUpdatedAt);
+    }
+
+    /// <summary>所有可见（已配置）卡片中最旧的快照时间——用"最不新鲜的那一个"代表头部要展示的
+    /// 聚合时间，宁可显示得保守也不能显得比实际情况更新。没有任何可见卡片有数据时返回 null。</summary>
+    private DateTimeOffset? ComputeAggregateLastUpdatedAt()
+    {
+        DateTimeOffset? oldest = null;
+        foreach (var card in Cards)
+        {
+            if (card.State == ProviderState.NotConfigured || card.CurrentSnapshot?.LastUpdatedAt is not { } at)
+            {
+                continue;
+            }
+
+            if (oldest is null || at < oldest)
+            {
+                oldest = at;
+            }
+        }
+
+        return oldest;
     }
 
     /// <summary>桌面看板紧凑头部的更新时间文案（文档 §6）：任意平台处于 Stale（缓存已超过新鲜度
     /// 窗口）就直接说"数据过期"，比逐个平台去看更直接；否则用比标准头部更短的相对时间（去掉"更新"）。</summary>
-    private string BuildCompactHeaderTimeText(DateTimeOffset now)
+    private string BuildCompactHeaderTimeText(DateTimeOffset now, DateTimeOffset? lastUpdatedAt)
     {
         if (Cards.Any(c => c.State == ProviderState.Stale))
         {
             return "数据过期";
         }
 
-        if (_lastRefreshAllAt is not { } refreshedAt)
+        if (lastUpdatedAt is not { } refreshedAt)
         {
             return string.Empty;
         }

@@ -250,9 +250,14 @@ public sealed class AppSettingsStore
 
             File.WriteAllText(_settingsPath, JsonSerializer.Serialize(envelope, JsonOptions));
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CryptographicException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CryptographicException or ArgumentException)
         {
-            // 写失败静默降级：与原实现一致，绝不让保存设置拖垮主流程。
+            // 写失败静默降级：与原实现一致，绝不让保存设置拖垮主流程。ArgumentException 补充于
+            // 实测事故——某些字段（如显示模式的窗口坐标）一旦意外携带 NaN/Infinity，
+            // System.Text.Json 会在序列化阶段直接抛出，之前没接住，导致整个应用在启动时
+            // （RestoreLastModeAsync 触发的一次 Persist）崩掉、连托盘图标都来不及创建。
+            // 产生 NaN/Infinity 的根因已经在 MonitorService/WindowPlacementCalculator 里堵上，
+            // 这里是防止同类问题再次把整个应用带崩的最后一道防线。
         }
     }
 

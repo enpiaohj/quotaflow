@@ -51,20 +51,47 @@ public static class WindowPlacementCalculator
 
         var target = ResolveTargetMonitor(saved, monitors);
 
-        var width = Math.Clamp(saved?.WidthDip is > 0 ? saved.WidthDip : defaultWidth, MinWidth, target.WorkAreaWidth);
-        var height = Math.Clamp(saved?.HeightDip is > 0 ? saved.HeightDip : defaultHeight, MinHeight, target.WorkAreaHeight);
+        if (!IsFiniteMonitor(target))
+        {
+            // 实测出现过：远程桌面等虚拟显示驱动偶尔报告 0 DPI，上游按 0 做除法会产出
+            // Infinity/NaN 一路带进这个显示器的工作区数据。这类非有限值一旦被 Math.Clamp
+            // 处理会保持 NaN/Infinity（Clamp 不会把它们拉回有效范围），最终写进配置文件时
+            // System.Text.Json 直接拒绝序列化、导致整个应用启动崩溃——比起在这里静默吞掉
+            // 一次位置计算失真，那样的后果重得多。目标显示器数据本身不可用时，退化成
+            // "从未保存过"的默认位置分支，不使用这块显示器的任何数值。
+            return new SavedWindowPlacement
+            {
+                MonitorDeviceName = null,
+                LeftDip = 0,
+                TopDip = 0,
+                WidthDip = Math.Max(defaultWidth, MinWidth),
+                HeightDip = Math.Max(defaultHeight, MinHeight),
+                LastUpdatedAt = DateTimeOffset.UtcNow,
+            };
+        }
+
+        // Math.Clamp 对 NaN/Infinity 不生效（比较恒为 false，原样放行）——如果 saved 本身携带了
+        // 非有限值（历史上某次崩溃前的半成品状态、或手改配置文件），下面几行必须先把它们当成
+        // "没有保存过"处理，否则会带着 NaN/Infinity 一路算到最后。
+        var hasValidWidth = saved?.WidthDip is { } w && double.IsFinite(w) && w > 0;
+        var hasValidHeight = saved?.HeightDip is { } h && double.IsFinite(h) && h > 0;
+        var hasValidPosition = saved is not null && double.IsFinite(saved.LeftDip) && double.IsFinite(saved.TopDip);
+
+        var width = Math.Clamp(hasValidWidth ? saved!.WidthDip : defaultWidth, MinWidth, target.WorkAreaWidth);
+        var height = Math.Clamp(hasValidHeight ? saved!.HeightDip : defaultHeight, MinHeight, target.WorkAreaHeight);
 
         double left, top;
-        if (saved is null)
+        if (hasValidPosition)
         {
-            // 从未保存过：贴目标显示器工作区右下角（跟托盘弹出位置的直觉一致，用户找得到）。
-            left = target.WorkAreaLeft + target.WorkAreaWidth - width - DefaultMargin;
-            top = target.WorkAreaTop + target.WorkAreaHeight - height - DefaultMargin;
+            left = saved!.LeftDip;
+            top = saved.TopDip;
         }
         else
         {
-            left = saved.LeftDip;
-            top = saved.TopDip;
+            // 从未保存过（或保存的坐标本身已经损坏）：贴目标显示器工作区右下角
+            // （跟托盘弹出位置的直觉一致，用户找得到）。
+            left = target.WorkAreaLeft + target.WorkAreaWidth - width - DefaultMargin;
+            top = target.WorkAreaTop + target.WorkAreaHeight - height - DefaultMargin;
         }
 
         var minLeft = target.WorkAreaLeft;
@@ -133,4 +160,11 @@ public static class WindowPlacementCalculator
 
         return monitors.FirstOrDefault(m => m.IsPrimary) ?? monitors[0];
     }
+
+    /// <summary>显示器的工作区/DPI 数据是否都是有限数值——实测某些虚拟/远程桌面显示驱动会
+    /// 报告 0 DPI，上游按 0 做除法产出的 Infinity/NaN 会一路带到这里。</summary>
+    private static bool IsFiniteMonitor(MonitorInfo monitor) =>
+        double.IsFinite(monitor.WorkAreaLeft) && double.IsFinite(monitor.WorkAreaTop) &&
+        double.IsFinite(monitor.WorkAreaWidth) && double.IsFinite(monitor.WorkAreaHeight) &&
+        double.IsFinite(monitor.DpiX) && double.IsFinite(monitor.DpiY);
 }

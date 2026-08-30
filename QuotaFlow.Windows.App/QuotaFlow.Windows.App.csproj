@@ -31,7 +31,7 @@
     <RootNamespace>QuotaFlow.Windows.App</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
-    <Version>1.4.2</Version>
+    <Version>1.4.3</Version>
     <Product>QuotaFlow</Product>
     <Company>QuotaFlow</Company>
   </PropertyGroup>

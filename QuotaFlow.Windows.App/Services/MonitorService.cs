@@ -58,7 +58,13 @@ public static class MonitorService
         {
             var rect = new RECT { Left = bounds.Left, Top = bounds.Top, Right = bounds.Right, Bottom = bounds.Bottom };
             var monitor = MonitorFromRect(ref rect, MonitorDefaultToNearest);
-            if (monitor != IntPtr.Zero && GetDpiForMonitor(monitor, MdtEffectiveDpi, out var dpiX, out var dpiY) == 0)
+            // 某些虚拟/远程桌面显示驱动（实测 RDP 会话）会返回成功（S_OK）但 dpiX/dpiY 却是 0——
+            // 不是失败路径（不会走进下面的 catch 或返回值非 0），却会让调用方拿 96.0 去除它，
+            // 产出 Infinity/NaN 一路带进 MonitorInfo → 位置修正 → 落盘的 JSON，导致启动崩溃
+            // （settings.json 写入时 System.Text.Json 拒绝序列化非有限浮点数）。0 本身也不是
+            // 任何真实显示器的合法 DPI，按失败同等对待、回退到 96。
+            if (monitor != IntPtr.Zero && GetDpiForMonitor(monitor, MdtEffectiveDpi, out var dpiX, out var dpiY) == 0 &&
+                dpiX > 0 && dpiY > 0)
             {
                 return (dpiX, dpiY);
             }

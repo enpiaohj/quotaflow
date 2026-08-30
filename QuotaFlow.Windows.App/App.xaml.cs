@@ -81,7 +81,22 @@ public partial class App : Application
         // 不改变可见性——RestoreLastModeAsync 本身是同步实现的 Task.CompletedTask 包装，
         // 这里安全地阻塞等待，不会真的产生异步让步或死锁）。必须在下面的展示分支之前调用，
         // 否则 TrayPopup 的默认配置会覆盖掉这里恢复出来的悬浮/桌面看板位置。
-        _presentation.RestoreLastModeAsync().GetAwaiter().GetResult();
+        //
+        // 显式 try/catch 兜底（而不是依赖 DispatcherUnhandledException）：这里抛出的异常
+        // 发生在 OnStartup 同步执行期间，一旦向上抛出会中断 OnStartup 本身——后面的
+        // SetupTrayIcon()/全局快捷键注册/启动时刷新全部不会执行，进程还活着但托盘图标
+        // 压根没创建过，表现成"看进程在运行，但完全找不到应用"。实测事故：某些虚拟/远程桌面
+        // 显示驱动报告的 DPI 是 0，导致窗口位置计算出 NaN/Infinity，写配置文件时崩在这里。
+        // 那个根因已经修了，这里额外加一层兜底，防止显示模式这个子系统未来任何新问题
+        // 再次连累托盘图标——托盘应用"图标必须出现"这条比其它任何子系统都优先级更高。
+        try
+        {
+            _presentation.RestoreLastModeAsync().GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            LogCrash(ex);
+        }
 
         // 诊断/自检：--show-panel 启动后直接展示面板且失焦不自动收起。
         var isDiagnosticShow = Array.IndexOf(e.Args, "--show-panel") >= 0;
