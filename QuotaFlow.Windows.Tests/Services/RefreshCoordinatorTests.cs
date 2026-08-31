@@ -29,6 +29,24 @@ public class RefreshCoordinatorTests
         }
     }
 
+    /// <summary>每次调用都返回"请求过于频繁"的假 Provider，用于验证限流后的延长冷却。</summary>
+    private sealed class RateLimitedProvider(string id) : IQuotaProvider
+    {
+        public int CallCount;
+        public string ProviderId => id;
+
+        public Task<ProviderSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref CallCount);
+            return Task.FromResult(new ProviderSnapshot
+            {
+                ProviderId = id,
+                DisplayName = id,
+                State = ProviderState.RateLimited,
+            });
+        }
+    }
+
     private sealed class ThrowingProvider(string id) : IQuotaProvider
     {
         public string ProviderId => id;
@@ -117,6 +135,59 @@ public class RefreshCoordinatorTests
 
         Assert.Equal(1, oldProvider.CallCount);
         Assert.Equal(1, newProvider.CallCount);
+    }
+
+    // ---- 限流后延长冷却（普通 18 秒冷却挡不住"下一轮 5 分钟自动刷新照样撞上同一个限流窗口"，
+    //      需要单独一个更长的冷却，参见 Claude 非公开用量接口偶发限流的实际问题） ----
+
+    [Fact]
+    public async Task RefreshAsync_LastResultWasRateLimited_UsesLongerCooldown_NormalIntervalNotEnough()
+    {
+        var provider = new RateLimitedProvider("claude");
+        var clock = new FakeClock();
+        var coordinator = new RefreshCoordinator(
+            [provider], minRefreshInterval: TimeSpan.FromSeconds(18), rateLimitedCooldown: TimeSpan.FromMinutes(3), now: () => clock.Now);
+
+        await coordinator.RefreshAsync("claude");
+        clock.Now = clock.Now.AddSeconds(19); // 已经超过普通的 18 秒冷却……
+
+        await coordinator.RefreshAsync("claude");
+
+        // ……但上一次结果是限流，这次仍然应该复用缓存，而不是又发一次请求。
+        Assert.Equal(1, provider.CallCount);
+    }
+
+    [Fact]
+    public async Task RefreshAsync_AfterRateLimitedCooldownElapses_TriggersNewRequest()
+    {
+        var provider = new RateLimitedProvider("claude");
+        var clock = new FakeClock();
+        var coordinator = new RefreshCoordinator(
+            [provider], minRefreshInterval: TimeSpan.FromSeconds(18), rateLimitedCooldown: TimeSpan.FromMinutes(3), now: () => clock.Now);
+
+        await coordinator.RefreshAsync("claude");
+        clock.Now = clock.Now.AddMinutes(4); // 超过限流冷却
+
+        await coordinator.RefreshAsync("claude");
+
+        Assert.Equal(2, provider.CallCount);
+    }
+
+    [Fact]
+    public async Task RefreshAsync_SuccessAfterRateLimited_RevertsToNormalCooldown()
+    {
+        // 限流冷却只应该在"上一次结果确实是限流"时生效；一旦成功查询过一次，
+        // 冷却要立刻恢复正常的短间隔，不能一直被上上次的限流状态拖长。
+        var provider = new FakeProvider("claude", TimeSpan.Zero);
+        var clock = new FakeClock();
+        var coordinator = new RefreshCoordinator(
+            [provider], minRefreshInterval: TimeSpan.FromSeconds(18), rateLimitedCooldown: TimeSpan.FromMinutes(3), now: () => clock.Now);
+
+        await coordinator.RefreshAsync("claude"); // 成功，走普通冷却
+        clock.Now = clock.Now.AddSeconds(19);
+        await coordinator.RefreshAsync("claude"); // 普通冷却已过，应该真的再查一次
+
+        Assert.Equal(2, provider.CallCount);
     }
 
     [Fact]

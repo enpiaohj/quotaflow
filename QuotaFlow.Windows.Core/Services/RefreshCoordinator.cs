@@ -12,6 +12,12 @@ namespace QuotaFlow.Windows.Core.Services;
 ///   入口很多（自动定时、手动按钮、托盘中键/双击、保存设置……），彼此互不知情，
 ///   短时间内叠加很容易把某个平台的接口打到限流（尤其是 Claude 的非公开用量接口）。
 ///   这个冷却只挡"离上次完成太近的重复请求"，不影响真正间隔够久的正常刷新。
+/// - 如果上一次查询结果本身就是"请求过于频繁"（<see cref="ProviderState.RateLimited"/>），
+///   说明服务端已经明确要求慢下来，普通的 18 秒冷却不够——按默认 5 分钟自动刷新间隔算，
+///   下一轮自动刷新照样会立刻撞上同一个限流窗口。这种情况改用更长的
+///   <see cref="_rateLimitedCooldown"/>（默认 3 分钟），在这段时间内任何来源的刷新请求都
+///   复用这份"请求过于频繁"快照（用户仍然能看到真实状态，只是不会再去戳服务端），
+///   等冷却过去、大概率已经出了限流窗口，才允许下一次真实请求。
 /// - "刷新全部"并行触发各平台查询；单个平台失败/异常都被兜底成一份错误快照，
 ///   绝不会因为一个平台出问题而让 Task.WhenAll 整体失败、拖累其他平台的结果。
 /// </summary>
@@ -21,19 +27,24 @@ public sealed class RefreshCoordinator
     private readonly Dictionary<string, Task<ProviderSnapshot>> _inFlight = new();
     private readonly Dictionary<string, DateTimeOffset> _lastCompletedAt = new();
     private readonly Dictionary<string, ProviderSnapshot> _lastSnapshot = new();
+    private readonly Dictionary<string, TimeSpan> _lastCooldown = new();
     private readonly object _gate = new();
     private readonly TimeSpan _minRefreshInterval;
+    private readonly TimeSpan _rateLimitedCooldown;
     private readonly Func<DateTimeOffset> _now;
 
     /// <param name="minRefreshInterval">同一平台两次真实网络请求之间的最短间隔；默认 18 秒。</param>
+    /// <param name="rateLimitedCooldown">上一次结果是"请求过于频繁"时改用的更长冷却；默认 3 分钟。</param>
     /// <param name="now">当前时间的来源；单测用可控的假时钟注入，默认 <see cref="DateTimeOffset.UtcNow"/>。</param>
     public RefreshCoordinator(
         IEnumerable<IQuotaProvider> providers,
         TimeSpan? minRefreshInterval = null,
+        TimeSpan? rateLimitedCooldown = null,
         Func<DateTimeOffset>? now = null)
     {
         _providers = providers.ToList();
         _minRefreshInterval = minRefreshInterval ?? TimeSpan.FromSeconds(18);
+        _rateLimitedCooldown = rateLimitedCooldown ?? TimeSpan.FromMinutes(3);
         _now = now ?? (() => DateTimeOffset.UtcNow);
     }
 
@@ -56,6 +67,7 @@ public sealed class RefreshCoordinator
             // 旧定义，继续复用会把新配置该有的效果延迟到冷却期结束之后才生效，一并清空。
             _lastCompletedAt.Clear();
             _lastSnapshot.Clear();
+            _lastCooldown.Clear();
         }
     }
 
@@ -77,7 +89,8 @@ public sealed class RefreshCoordinator
 
             if (_lastSnapshot.TryGetValue(providerId, out var cached) &&
                 _lastCompletedAt.TryGetValue(providerId, out var completedAt) &&
-                _now() - completedAt < _minRefreshInterval)
+                _lastCooldown.TryGetValue(providerId, out var cooldown) &&
+                _now() - completedAt < cooldown)
             {
                 return Task.FromResult(cached);
             }
@@ -146,6 +159,9 @@ public sealed class RefreshCoordinator
         {
             _lastCompletedAt[provider.ProviderId] = _now();
             _lastSnapshot[provider.ProviderId] = snapshot;
+            _lastCooldown[provider.ProviderId] = snapshot.State == ProviderState.RateLimited
+                ? _rateLimitedCooldown
+                : _minRefreshInterval;
         }
 
         return snapshot;

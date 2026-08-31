@@ -26,10 +26,9 @@
             <Setter Property="Foreground" Value="{DynamicResource Brush.TextTertiary}" />
             <Setter Property="Margin" Value="0,6,0,0" />
         </Style>
-        <Style TargetType="RadioButton">
-            <Setter Property="Margin" Value="0,0,16,0" />
-            <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
-        </Style>
+        <!-- RadioButton 用全局隐式样式（Themes/Styles.xaml），这里不再局部覆盖——局部同类型
+             无 Key 样式会盖掉全局模板，之前只设了 Margin/Foreground，等于让深色模式下的单选框
+             一直用系统默认的白底控件外观。 -->
         <Style x:Key="EyeButton" TargetType="Button">
             <Setter Property="Width" Value="28" />
             <Setter Property="Height" Value="28" />
@@ -52,17 +51,17 @@
                 </Setter.Value>
             </Setter>
         </Style>
-        <Style x:Key="EndpointBox" TargetType="TextBox">
+        <!-- BasedOn 全局 TextBox 隐式样式（Themes/Styles.xaml）：继承深色/浅色都对的背景、
+             文字色和聚焦态模板，这里只再叠加各自的间距/字体差异，不用重新定义一整套外观。 -->
+        <Style x:Key="EndpointBox" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
             <Setter Property="Padding" Value="8,6" />
-            <Setter Property="BorderBrush" Value="{DynamicResource Brush.CardBorder}" />
             <Setter Property="FontFamily" Value="Consolas" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="Margin" Value="0,6,0,0" />
         </Style>
-        <Style x:Key="SecretInputBox" TargetType="TextBox">
+        <Style x:Key="SecretInputBox" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
             <!-- 右侧留出 34px 给叠加的"眼睛"按钮 -->
             <Setter Property="Padding" Value="8,6,34,6" />
-            <Setter Property="BorderBrush" Value="{DynamicResource Brush.CardBorder}" />
             <Setter Property="FontFamily" Value="Consolas" />
             <Setter Property="FontSize" Value="12" />
             <!-- API Key 只会是 ASCII 字符，禁用输入法：既不需要中文候选框，也避免第三方 IME 钩子冲突。 -->
@@ -138,10 +137,13 @@
                     <TextBlock Text="外观" Style="{StaticResource SectionTitle}" />
                     <StackPanel Orientation="Horizontal">
                         <RadioButton GroupName="Theme" Content="跟随系统"
+                                     AutomationProperties.AutomationId="ThemeRadio_System"
                                      IsChecked="{Binding Theme, Converter={StaticResource EnumEquals}, ConverterParameter=System}" />
                         <RadioButton GroupName="Theme" Content="浅色"
+                                     AutomationProperties.AutomationId="ThemeRadio_Light"
                                      IsChecked="{Binding Theme, Converter={StaticResource EnumEquals}, ConverterParameter=Light}" />
                         <RadioButton GroupName="Theme" Content="深色"
+                                     AutomationProperties.AutomationId="ThemeRadio_Dark"
                                      IsChecked="{Binding Theme, Converter={StaticResource EnumEquals}, ConverterParameter=Dark}" />
                     </StackPanel>
                     <TextBlock Text="日期显示格式" Style="{StaticResource FieldLabel}" Margin="0,10,0,0" />
