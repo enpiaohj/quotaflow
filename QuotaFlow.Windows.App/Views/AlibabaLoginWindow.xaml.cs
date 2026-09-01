@@ -41,6 +41,7 @@ public partial class AlibabaLoginWindow : Window
         ["login_aliyunid", "login_aliyunid_pk", "sid", "unb", "aliyun_choice", "LOGIN_ALIYUNID"];
 
     private readonly DispatcherTimer _detectTimer;
+    private readonly List<CoreWebView2Frame> _childFrames = [];
     private bool _loginSucceeded;
     private bool _closedByUser;
     private bool _webViewReady;
@@ -73,6 +74,11 @@ public partial class AlibabaLoginWindow : Window
             await LoginWebView.EnsureCoreWebView2Async(env);
             LoginWebView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
             LoginWebView.CoreWebView2.Settings.AreDevToolsEnabled = false;
+            // 百炼控制台是微前端架构，子应用（含 Token Plan 页面本身）很可能渲染在 iframe 里，
+            // SEC_TOKEN 若被子应用自己的脚本注入，只会存在于那个 iframe 的 window/DOM 里，
+            // 主 frame（LoginWebView.CoreWebView2）看不到。这个 SDK 版本没有同步的 Frames
+            // 集合，只能靠 FrameCreated 事件持续收集，供提取 SEC_TOKEN 时逐个尝试。
+            LoginWebView.CoreWebView2.FrameCreated += (_, args) => _childFrames.Add(args.Frame);
             _webViewReady = true;
 
             LoadingHint.Text = "正在加载阿里云百炼控制台…";
@@ -289,7 +295,94 @@ public partial class AlibabaLoginWindow : Window
 
         var result = await LoginWebView.CoreWebView2.ExecuteScriptAsync(js);
         var token = result?.Trim().Trim('"');
-        return string.IsNullOrEmpty(token) ? string.Empty : token;
+        if (!string.IsNullOrEmpty(token))
+        {
+            return token;
+        }
+
+        // 主 frame 拿不到：百炼控制台是微前端架构，Token Plan 子应用很可能渲染在 iframe 里，
+        // SEC_TOKEN 如果由子应用自己的脚本注入，只存在于那个 iframe 的 window/DOM 中，
+        // 在主 frame 执行的脚本看不到。对已知的每个子 frame 重复同样的探测。
+        foreach (var frame in _childFrames.ToArray())
+        {
+            try
+            {
+                var frameResult = await frame.ExecuteScriptAsync(js);
+                var frameToken = frameResult?.Trim().Trim('"');
+                if (!string.IsNullOrEmpty(frameToken))
+                {
+                    return frameToken;
+                }
+            }
+            catch (Exception)
+            {
+                // 单个 frame 失败（例如已销毁）不影响尝试其余 frame。
+            }
+        }
+
+        // 临时诊断（问题解决后删除）：主 frame 和所有已知子 frame 都提取不到时，把结构性诊断
+        // 信息（不含任何 token/Cookie 值本身）写到本机临时文件，帮助判断根因。
+        try
+        {
+            await DiagnoseFrameStructureAsync();
+        }
+        catch (Exception)
+        {
+            // 诊断失败不影响主流程。
+        }
+
+        return string.Empty;
+    }
+
+    /// <summary>临时诊断（问题解决后删除）：枚举 WebView2 里所有子 frame，尝试在每个 frame 上下文
+    /// 执行同样的探测脚本，把"哪个 frame 里能看到 SEC_TOKEN"这类结构性信息写入本机文件——
+    /// 绝不写入 token/Cookie 的实际值。</summary>
+    private async Task DiagnoseFrameStructureAsync()
+    {
+        var lines = new List<string>
+        {
+            $"[{DateTime.Now:HH:mm:ss}] Main frame URL: {LoginWebView.Source}",
+        };
+
+        const string probeJs = """
+            (function () {
+                try {
+                    var hasSecToken = typeof window.SEC_TOKEN !== 'undefined' && !!window.SEC_TOKEN;
+                    var htmlHasSecToken = (document.documentElement ? document.documentElement.outerHTML : '').indexOf('SEC_TOKEN') >= 0;
+                    return JSON.stringify({ href: location.href, hasSecToken: hasSecToken, htmlHasSecToken: htmlHasSecToken, bodyLen: document.body ? document.body.innerHTML.length : 0 });
+                } catch (e) { return JSON.stringify({ error: e.message }); }
+            })();
+            """;
+
+        try
+        {
+            var mainResult = await LoginWebView.CoreWebView2.ExecuteScriptAsync(probeJs);
+            lines.Add($"Main frame probe: {mainResult}");
+        }
+        catch (Exception ex)
+        {
+            lines.Add($"Main frame probe failed: {ex.GetType().Name}");
+        }
+
+        var frames = _childFrames.ToArray();
+        lines.Add($"Child frame count (via FrameCreated): {frames.Length}");
+        var index = 0;
+        foreach (var frame in frames)
+        {
+            try
+            {
+                var frameResult = await frame.ExecuteScriptAsync(probeJs);
+                lines.Add($"Frame[{index}] Name='{frame.Name}' probe: {frameResult}");
+            }
+            catch (Exception ex)
+            {
+                lines.Add($"Frame[{index}] Name='{frame.Name}' probe failed: {ex.GetType().Name}: {ex.Message}");
+            }
+
+            index++;
+        }
+
+        File.AppendAllLines(Path.Combine(Path.GetTempPath(), "quotaflow-tokenplan-frame-diag.txt"), lines);
     }
 
     private void OnCancelClick(object sender, RoutedEventArgs e)
