@@ -27,6 +27,10 @@ APIKeys.txt
 .credentials.json
 seed_keys.txt
 
+# 跨设备迁移备份包（v0.9.0 起）。内含用口令加密的 API Key 与登录态——虽然是密文，
+# 也绝不该进版本库：仓库一旦外泄就等于把密文和爆破机会一起交出去了。
+*.qfbackup
+
 # OS
 .DS_Store
 Thumbs.db
