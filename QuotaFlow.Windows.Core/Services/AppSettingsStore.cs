@@ -29,6 +29,9 @@ public sealed class AppSettingsStore
 
     private readonly string _settingsPath;
 
+    /// <summary>设置文件所在目录，供设置页显示路径并提供"打开配置目录"入口。</summary>
+    public string DataDirectory => Path.GetDirectoryName(_settingsPath) ?? string.Empty;
+
     public AppSettingsStore(string? settingsPathOverride = null)
     {
         _settingsPath = settingsPathOverride ?? GetDefaultSettingsPath();

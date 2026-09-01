@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Threading;
@@ -384,6 +385,9 @@ public sealed partial class SettingsViewModel : ObservableObject
     public IAsyncRelayCommand LoginTokenPlanCommand { get; }
     public IRelayCommand ClearTokenPlanCookieCommand { get; }
     public IRelayCommand ClearCacheCommand { get; }
+    public IRelayCommand OpenDataDirectoryCommand { get; }
+    public IAsyncRelayCommand ExportBackupCommand { get; }
+    public IRelayCommand ImportBackupCommand { get; }
     public IRelayCommand RefreshLoginStatusCommand { get; }
     public IRelayCommand SaveGeneralSettingsCommand { get; }
     public IAsyncRelayCommand ToggleRevealMiniMaxKeyCommand { get; }
@@ -448,6 +452,9 @@ public sealed partial class SettingsViewModel : ObservableObject
         LoginTokenPlanCommand = new AsyncRelayCommand(LoginTokenPlanAsync);
         ClearTokenPlanCookieCommand = new RelayCommand(ClearTokenPlanCookie);
         ClearCacheCommand = new RelayCommand(ClearCache);
+        OpenDataDirectoryCommand = new RelayCommand(OpenDataDirectory);
+        ExportBackupCommand = new AsyncRelayCommand(ExportBackupAsync);
+        ImportBackupCommand = new RelayCommand(ImportBackup);
         RefreshLoginStatusCommand = new RelayCommand(RefreshLoginStatus);
         SaveGeneralSettingsCommand = new RelayCommand(SaveGeneralSettings);
         ToggleRevealMiniMaxKeyCommand = new AsyncRelayCommand(ToggleRevealMiniMaxKeyAsync);
@@ -740,6 +747,205 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         _cache.Clear();
         StatusMessage = "已清除本地缓存";
+    }
+
+    /// <summary>配置、缓存、日志所在目录，直接显示给用户。</summary>
+    public string DataDirectory => _settingsStore.DataDirectory;
+
+    /// <summary>
+    /// 备份包里要带上的凭据键名。
+    ///
+    /// Claude / Codex 不在其中：它们的登录态由各自的 CLI 自己管理，QuotaFlow 只读不存，
+    /// 新机器上登录一次 CLI 即可，没有可迁移的东西。
+    /// </summary>
+    private IEnumerable<(string Key, bool IsLarge, bool UseUtf8)> BackupCredentialKeys()
+    {
+        yield return (MiniMaxKeyName, false, false);
+        yield return (DeepSeekKeyName, false, false);
+        yield return (TokenPlanCookieKeyName, true, false);
+        yield return (TokenPlanSecTokenKeyName, false, true);
+
+        foreach (var row in CustomPlatformRows)
+        {
+            yield return (row.CredentialKeyName, false, false);
+        }
+    }
+
+    /// <summary>
+    /// 导出加密备份包。
+    ///
+    /// 这是唯一一条会把密钥写进文件的路径，因此必须由用户显式发起、显式设定口令，
+    /// 并在界面上把"文件含密钥、口令丢了打不开"讲清楚（见 PasswordPromptWindow 的提示文案）。
+    /// 密钥只在内存里从凭据管理器读出、立即交给 AES-GCM 加密，绝不写明文、绝不进日志。
+    /// </summary>
+    private async Task ExportBackupAsync()
+    {
+        // 身份验证必须在最前面：导出比"眼睛"查看单个 Key 危险得多——眼睛只暴露一个密钥，
+        // 导出是把所有 API Key 和登录态一次性打包成文件。既然查看一个 Key 都要验证身份，
+        // 把全部密钥导出去更没有理由豁免。
+        var verification = await _verifyIdentity("验证身份以导出包含全部密钥的备份包");
+        if (verification != IdentityVerificationResult.Verified)
+        {
+            StatusMessage = verification == IdentityVerificationResult.Cancelled
+                ? "已取消验证，未导出"
+                : "验证失败，无法导出备份";
+            return;
+        }
+
+        var password = Views.PasswordPromptWindow.AskNewPassword(WindowForDialog());
+        if (string.IsNullOrEmpty(password))
+        {
+            StatusMessage = "已取消导出";
+            return;
+        }
+
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "导出 QuotaFlow 配置备份",
+            Filter = "QuotaFlow 备份 (*.qfbackup)|*.qfbackup|所有文件 (*.*)|*.*",
+            FileName = $"QuotaFlow-backup-{DateTime.Now:yyyy-MM-dd}.qfbackup",
+            AddExtension = true,
+        };
+
+        if (dialog.ShowDialog() != true)
+        {
+            StatusMessage = "已取消导出";
+            return;
+        }
+
+        try
+        {
+            // 以"当前编辑态 + 磁盘基线"为准导出，跟点保存看到的内容一致。
+            var payload = new BackupPayload { Settings = BuildSettingsSnapshot().Settings };
+
+            var secretCount = 0;
+            foreach (var (key, isLarge, useUtf8) in BackupCredentialKeys())
+            {
+                var value = isLarge ? _credentialStore.TryReadLarge(key) : _credentialStore.TryRead(key, useUtf8);
+                if (!string.IsNullOrEmpty(value))
+                {
+                    payload.Secrets[key] = value;
+                    secretCount++;
+                }
+            }
+
+            File.WriteAllText(dialog.FileName, SettingsBackup.Export(payload, password));
+            StatusMessage = $"已导出备份（含 {secretCount} 项密钥，已用口令加密）。请妥善保管该文件与口令。";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"导出失败：{ex.GetType().Name}";
+        }
+    }
+
+    /// <summary>
+    /// 导入备份包：先完整解密校验通过，再落地。口令错误或文件损坏时原有配置分毫不动。
+    /// </summary>
+    private void ImportBackup()
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "导入 QuotaFlow 配置备份",
+            Filter = "QuotaFlow 备份 (*.qfbackup)|*.qfbackup|所有文件 (*.*)|*.*",
+            CheckFileExists = true,
+        };
+
+        if (dialog.ShowDialog() != true)
+        {
+            StatusMessage = "已取消导入";
+            return;
+        }
+
+        string content;
+        try
+        {
+            content = File.ReadAllText(dialog.FileName);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"读取备份文件失败：{ex.GetType().Name}";
+            return;
+        }
+
+        var password = Views.PasswordPromptWindow.AskExistingPassword(WindowForDialog());
+        if (string.IsNullOrEmpty(password))
+        {
+            StatusMessage = "已取消导入";
+            return;
+        }
+
+        var result = SettingsBackup.Import(content, password);
+        if (!result.Succeeded)
+        {
+            StatusMessage = result.Failure switch
+            {
+                BackupImportFailure.NotABackupFile => "这不是 QuotaFlow 备份文件，或文件已损坏",
+                BackupImportFailure.UnsupportedVersion => "备份文件来自更新版本的 QuotaFlow，请先升级本机版本",
+                _ => "口令不正确，或备份文件已被修改。现有配置未做任何改动。",
+            };
+            return;
+        }
+
+        try
+        {
+            var payload = result.Payload!;
+
+            // 先写凭据、再写设置：设置里含自定义平台定义，凭据键与其 Id 一一对应，
+            // 顺序反了会出现"平台已出现但密钥还没到位"的短暂空窗。
+            foreach (var (key, value) in payload.Secrets)
+            {
+                if (key == TokenPlanCookieKeyName)
+                {
+                    _credentialStore.SaveLarge(key, value);
+                }
+                else
+                {
+                    _credentialStore.Save(key, value, useUtf8: key == TokenPlanSecTokenKeyName);
+                }
+            }
+
+            // WindowDisplay 是本机的窗口位置/显示模式，跟着备份跨机器搬没有意义（分辨率、
+            // 显示器布局都不一样），保留本机现有值。
+            var current = _settingsStore.Load();
+            payload.Settings.WindowDisplay = current.WindowDisplay;
+            _settingsStore.Save(payload.Settings);
+            _applyHotkeySettings(payload.Settings);
+            SettingsSaved?.Invoke(this, payload.Settings);
+
+            StatusMessage = $"已导入备份（含 {payload.Secrets.Count} 项密钥）。设置已生效，重新打开设置页可看到导入后的内容。";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"导入过程中出错：{ex.GetType().Name}，部分内容可能未生效";
+        }
+    }
+
+    /// <summary>
+    /// 在文件资源管理器里打开配置目录。
+    ///
+    /// 用 explorer.exe 显式打开而不是 <c>UseShellExecute</c> 直接开目录：后者在某些
+    /// 关联被改过的环境上会被别的程序接管。失败时只提示，不抛出——这只是个便利入口。
+    /// </summary>
+    private void OpenDataDirectory()
+    {
+        try
+        {
+            var dir = DataDirectory;
+            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
+            {
+                StatusMessage = "配置目录尚不存在（保存一次设置后会自动创建）";
+                return;
+            }
+
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{dir}\"")
+            {
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"打开配置目录失败：{ex.GetType().Name}，可手动访问上方路径";
+        }
     }
 
     private void AddCustomPlatform()

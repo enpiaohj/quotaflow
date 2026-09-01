@@ -923,10 +923,43 @@
             <!-- 数据与隐私 -->
             <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
                 <StackPanel>
-                    <Button Content="清除本地缓存" Style="{StaticResource Style.SecondaryButton}" HorizontalAlignment="Left"
-                            Command="{Binding ClearCacheCommand}" />
+                    <TextBlock Text="配置目录" Style="{StaticResource FieldLabel}" />
+                    <TextBox Style="{StaticResource EndpointBox}" IsReadOnly="True"
+                             AutomationProperties.AutomationId="DataDirectoryBox"
+                             Text="{Binding DataDirectory, Mode=OneWay}"
+                             ToolTip="设置、额度缓存与崩溃日志都在这个目录下" />
+                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
+                               Text="settings.json（DPAPI 加密）、cache.json、crash.log 都在这里。设置文件按当前 Windows 用户加密，换用户或换机器无法解密——因此把它放到程序目录也不会变成绿色软件，密钥和登录态更是保存在凭据管理器里、根本不在文件中。" />
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                        <Button Content="打开配置目录" Style="{StaticResource Style.SecondaryButton}" Margin="0,0,8,0"
+                                AutomationProperties.AutomationId="OpenDataDirectoryButton"
+                                Command="{Binding OpenDataDirectoryCommand}" />
+                        <Button Content="清除本地缓存" Style="{StaticResource Style.SecondaryButton}"
+                                AutomationProperties.AutomationId="ClearCacheButton"
+                                Command="{Binding ClearCacheCommand}" />
+                    </StackPanel>
                     <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
                                Text="密钥保存在 Windows 凭据管理器中，不会写入普通配置文件、日志或缓存。Claude/Codex 的登录状态直接读取对应 CLI 本机凭据文件，QuotaFlow 不存储、也不上传这些凭据。" />
+                </StackPanel>
+            </Border>
+
+            <!-- 跨设备迁移 -->
+            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
+                <StackPanel>
+                    <TextBlock Text="备份与迁移" Style="{StaticResource SectionTitle}" />
+                    <TextBlock Style="{StaticResource StatusLabel}" Margin="0,0,0,0" TextWrapping="Wrap"
+                               Text="导出一个加密备份包，在另一台设备上导入即可，无需逐项重填。包含所有偏好设置、自定义平台定义，以及 MiniMax / DeepSeek / 自定义平台的 API Key 和百炼登录态。" />
+                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
+                               Foreground="{DynamicResource Brush.StatusWarn}"
+                               Text="导出会先验证身份（与查看 API Key 明文同一机制），因为备份包含全部密钥。请用足够强的口令并妥善保管文件——口令不会被保存，忘记后无法找回、备份包也就再也打不开。Claude / Codex 无需迁移，它们的登录态由各自的 CLI 管理，在新设备上登录一次 CLI 即可。" />
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                        <Button Content="导出备份…" Style="{StaticResource Style.SecondaryButton}" Margin="0,0,8,0"
+                                AutomationProperties.AutomationId="ExportBackupButton"
+                                Command="{Binding ExportBackupCommand}" />
+                        <Button Content="导入备份…" Style="{StaticResource Style.SecondaryButton}"
+                                AutomationProperties.AutomationId="ImportBackupButton"
+                                Command="{Binding ImportBackupCommand}" />
+                    </StackPanel>
                 </StackPanel>
             </Border>
 
