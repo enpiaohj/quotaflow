@@ -3,6 +3,7 @@ using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using QuotaFlow.Windows.Core.Models;
+using QuotaFlow.Windows.Core.Services;
 
 namespace QuotaFlow.Windows.Core.Providers;
 
@@ -372,14 +373,14 @@ public sealed class AlibabaTokenPlanQuotaProvider : IQuotaProvider
             if (!percentage.HasValue)
             {
                 return UsageResult.FromError(MakeSnapshot(ProviderState.ProviderError, ErrorCategory.ResponseFormat,
-                    $"百炼用量接口返回的 JSON 中缺少 {FieldPercentage} 字段（接口可能已变化），请反馈给开发者核对"));
+                    MissingFieldGuidance(FieldPercentage, raw)));
             }
 
             var resetMs = FindNumeric(root, FieldResetTime, 0);
             if (!resetMs.HasValue)
             {
                 return UsageResult.FromError(MakeSnapshot(ProviderState.ProviderError, ErrorCategory.ResponseFormat,
-                    $"百炼用量接口返回的 JSON 中缺少 {FieldResetTime} 字段（接口可能已变化），请反馈给开发者核对"));
+                    MissingFieldGuidance(FieldResetTime, raw)));
             }
 
             var usedPercent = Math.Clamp(percentage.Value * 100.0, 0.0, 100.0);
@@ -591,6 +592,24 @@ public sealed class AlibabaTokenPlanQuotaProvider : IQuotaProvider
         ErrorCategory = ErrorCategory.NotConfigured,
         UserGuidance = "请在设置页填写百炼 Console Cookie",
     };
+
+    /// <summary>
+    /// 目标字段缺失时的提示。
+    ///
+    /// 这个接口是控制台内部接口（非公开），阿里云随时可能改字段名。只说一句"接口可能已变化"
+    /// 等于把逆向工作原样留给下一次——实测过一次：为搞清新结构，临时写了正则扫描器去抓字段名。
+    /// 所以这里直接把本次实际收到的字段名附在提示里，用户把提示发回来就能直接对照。
+    ///
+    /// <b>只带字段名、不带任何值</b>：值里可能有额度数字、账号 ID、令牌。
+    /// </summary>
+    private static string MissingFieldGuidance(string expectedField, string raw)
+    {
+        var shape = JsonShapeDescriber.Summarize(raw);
+        var suffix = shape is null ? string.Empty : $"；本次实际收到的字段为：{shape}";
+
+        return $"百炼用量接口返回的 JSON 中缺少 {expectedField} 字段（接口可能已变化），"
+               + $"请把这条提示反馈给开发者{suffix}";
+    }
 
     private ProviderSnapshot MakeSnapshot(ProviderState state, ErrorCategory category, string guidance) => new()
     {

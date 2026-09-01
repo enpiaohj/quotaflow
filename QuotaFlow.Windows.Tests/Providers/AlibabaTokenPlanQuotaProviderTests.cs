@@ -127,6 +127,47 @@ public class AlibabaTokenPlanQuotaProviderTests
         Assert.Equal("p_efm", cornerstone.GetProperty("productCode").GetString());
     }
 
+    /// <summary>
+    /// 接口字段改名时，提示里必须带上本次实际收到的字段名——否则下次又要从零逆向一遍。
+    /// </summary>
+    [Fact]
+    public void ParseUsageResponse_FieldRenamed_GuidanceCarriesActualFieldNames()
+    {
+        // 模拟阿里云把字段名改掉的情形
+        var json = """
+            {
+              "code": "200",
+              "data": { "DataV2": { "data": { "data": { "weeklyUsedRatio": 0.31, "weeklyResetAt": 1788829080000 } } } }
+            }
+            """;
+
+        var usage = CreateProvider().ParseUsageResponse(json);
+
+        Assert.NotNull(usage.Error);
+        Assert.Equal(ErrorCategory.ResponseFormat, usage.Error!.ErrorCategory);
+        Assert.Contains("weeklyUsedRatio", usage.Error.UserGuidance!, StringComparison.Ordinal);
+        Assert.Contains("weeklyResetAt", usage.Error.UserGuidance, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseUsageResponse_FieldRenamed_GuidanceDoesNotLeakValues()
+    {
+        // 提示会显示在界面上、也会被用户发出来，只能带字段名。
+        var json = """
+            {
+              "code": "200",
+              "requestId": "SENSITIVE-REQUEST-ID",
+              "data": { "DataV2": { "data": { "data": { "weeklyUsedRatio": 0.31 } } } }
+            }
+            """;
+
+        var usage = CreateProvider().ParseUsageResponse(json);
+
+        Assert.NotNull(usage.Error);
+        Assert.DoesNotContain("SENSITIVE-REQUEST-ID", usage.Error!.UserGuidance!, StringComparison.Ordinal);
+        Assert.DoesNotContain("0.31", usage.Error.UserGuidance, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void ParseUsageResponse_FlatJson_StillFindsFields()
     {
