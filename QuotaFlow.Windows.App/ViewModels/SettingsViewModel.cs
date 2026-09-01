@@ -1017,61 +1017,40 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// 由当前设置页编辑态构建一份完整 AppSettings（含自定义平台逐行校验）。"保存设置"和
     /// "百炼一键登录成功后触发面板刷新"共用这一份快照，保证两条路径对面板应用的是同一套设置。
     /// </summary>
+    /// <summary>
+    /// 把当前编辑态收集成 <see cref="SettingsPageEdits"/>，交给 Core 的
+    /// <see cref="SettingsSnapshotBuilder"/> 合并进磁盘基线。
+    ///
+    /// 合并规则（哪些字段属于本页、哪些必须原样保留）刻意放在 Core：那条规则曾被破坏并造成
+    /// 数据丢失，而 App 工程无法被测试工程引用，写不了单测。现在规则在 Core 且有反射校验的
+    /// 回归测试，本方法只负责"把界面上的值搬进 DTO"。
+    /// </summary>
     private (AppSettings Settings, List<string> SkippedNames) BuildSettingsSnapshot()
     {
-        // 自定义平台：逐行校验，配置不完整的行直接跳过（不落盘），并点名提示用户是哪一个。
-        var customPlatforms = new List<CustomPlatformSettings>();
-        var skippedNames = new List<string>();
-        foreach (var row in CustomPlatformRows)
+        var edits = new SettingsPageEdits
         {
-            var def = row.ToSettings();
-            if (!IsValidCustomPlatform(def))
-            {
-                skippedNames.Add(string.IsNullOrWhiteSpace(def.Name) ? row.Id : def.Name);
-                continue;
-            }
+            AutoRefreshIntervalMinutes = AutoRefreshIntervalMinutes,
+            RefreshOnStartup = RefreshOnStartup,
+            StartWithWindows = StartWithWindows,
+            Theme = Theme,
+            MiniMaxRegion = MiniMaxRegion,
+            ShowUnknownWindows = ShowUnknownWindows,
+            ClockDisplayFormat = ClockDisplayFormat,
+            ProxyMode = ProxyMode,
+            ProxyAddress = ProxyAddress,
+            ClaudeEndpointOverride = ClaudeEndpointOverride,
+            CodexEndpointOverride = CodexEndpointOverride,
+            MiniMaxEndpointOverride = MiniMaxEndpointOverride,
+            DeepSeekEndpointOverride = DeepSeekEndpointOverride,
+            HotkeyEnabled = HotkeyEnabled,
+            HotkeyModifiers = HotkeyModifiers,
+            HotkeyKey = HotkeyKey,
+            HiddenPlatforms = [.. BuiltInPanelVisibility().Where(p => !p.Show).Select(p => p.ProviderId)],
+            CustomPlatforms = [.. CustomPlatformRows.Select(r => r.ToSettings())],
+        };
 
-            customPlatforms.Add(def);
-        }
-
-        // 以磁盘上的当前设置为基线做"读-改-写"，只覆盖本页真正拥有的字段。
-        //
-        // 早期实现是 new AppSettings { ... } 从零构造：凡是没在初始化器里列出的字段都会取
-        // 默认值，然后被 Save 整体写盘。WindowDisplay 恰好没列出来，于是点一次「保存设置」
-        // 就把显示模式、不透明度、置顶、锁定位置、紧凑布局、材质、边缘吸附以及各显示器
-        // 记住的窗口位置全部重置回默认值——实测可稳定复现（勾选紧凑布局 → 保存 → 重启即丢失）。
-        // WindowPresentationCoordinator.Persist() 早就是"读-改-写"，两条持久化路径不对称
-        // 才是根因；这里改成同样的写法，顺带让将来新增的"面板即时生效字段"默认就不会被误伤。
-        var settings = _settingsStore.Load();
-        settings.AutoRefreshIntervalMinutes = AutoRefreshIntervalMinutes;
-        settings.RefreshOnStartup = RefreshOnStartup;
-        settings.StartWithWindows = StartWithWindows;
-        settings.Theme = Theme;
-        settings.MiniMaxRegion = MiniMaxRegion;
-        settings.ShowUnknownWindows = ShowUnknownWindows;
-        settings.ProxyMode = ProxyMode;
-        settings.ProxyAddress = ToNullIfEmpty(ProxyAddress);
-        settings.ClockDisplayFormat = ClockDisplayFormat;
-        // 接口地址覆盖：空串转 null（= 用内置默认）。
-        settings.ClaudeEndpointOverride = ToNullIfEmpty(ClaudeEndpointOverride);
-        settings.CodexEndpointOverride = ToNullIfEmpty(CodexEndpointOverride);
-        settings.MiniMaxEndpointOverride = ToNullIfEmpty(MiniMaxEndpointOverride);
-        settings.DeepSeekEndpointOverride = ToNullIfEmpty(DeepSeekEndpointOverride);
-        settings.CustomPlatforms = customPlatforms;
-        // 只记"被隐藏的"，不记"显示的"：将来新增内置平台时，老配置里自然不会出现它的 id，
-        // 默认就是显示，不需要迁移。
-        var hiddenPlatforms = BuiltInPanelVisibility()
-            .Where(p => !p.Show)
-            .Select(p => p.ProviderId)
-            .ToArray();
-        settings.HiddenPlatforms = hiddenPlatforms.Length > 0 ? hiddenPlatforms : null;
-        settings.HotkeyEnabled = HotkeyEnabled;
-        settings.HotkeyModifiers = HotkeyModifiers;
-        settings.HotkeyKey = HotkeyKey;
-        // PlatformOrder / QuotaDisplaySemantic / WindowDisplay 都由面板即时持久化，不属于本页，
-        // 基线里是什么就保留什么——从磁盘读比用打开设置页时的快照更准确：用户在设置页开着的
-        // 同时调整了卡片顺序，也不会被这次保存回退。
-        return (settings, skippedNames);
+        var result = SettingsSnapshotBuilder.Build(_settingsStore.Load(), edits);
+        return (result.Settings, [.. result.SkippedCustomPlatforms]);
     }
 
     private void SaveGeneralSettings()
@@ -1140,50 +1119,6 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// 同一平台内窗口名称不能重复、"已使用/剩余数值"语义必须配置额度上限。
     /// 任一条不满足就整个平台跳过保存（不做"部分窗口生效"这种更复杂的半保存）。
     /// </summary>
-    private static bool IsValidCustomPlatform(CustomPlatformSettings def)
-    {
-        if (string.IsNullOrWhiteSpace(def.Name) ||
-            string.IsNullOrWhiteSpace(def.Endpoint) ||
-            !Uri.TryCreate(def.Endpoint, UriKind.Absolute, out var uri) ||
-            uri.Scheme is not ("http" or "https") ||
-            (def.AuthKind == CustomAuthKind.CustomHeader && string.IsNullOrWhiteSpace(def.HeaderName)))
-        {
-            return false;
-        }
-
-        if (def.QuotaWindows.Count == 0)
-        {
-            return false;
-        }
-
-        var seenWindowNames = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var window in def.QuotaWindows)
-        {
-            if (string.IsNullOrWhiteSpace(window.Name) || string.IsNullOrWhiteSpace(window.ValuePath))
-            {
-                return false;
-            }
-
-            if (!seenWindowNames.Add(window.Name))
-            {
-                return false; // 同一平台内窗口名称重复
-            }
-
-            if (window.DataKind is CustomDataKind.UsedValue or CustomDataKind.RemainingValue &&
-                string.IsNullOrWhiteSpace(window.LimitPath) && window.FixedLimit is null)
-            {
-                return false; // 已使用/剩余数值语义必须配置额度上限（路径或固定值二选一）
-            }
-        }
-
-        return true;
-    }
-
-    private static string? ToNullIfEmpty(string? value)
-    {
-        var trimmed = value?.Trim();
-        return string.IsNullOrEmpty(trimmed) ? null : trimmed;
-    }
 
     /// <summary>设置窗口显示后调用：启动每秒一次的"日期显示格式"实时预览。</summary>
     public void StartClockPreviewTimer() => _clockPreviewTimer.Start();
