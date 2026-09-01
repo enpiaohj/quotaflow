@@ -6,6 +6,41 @@
 > 保留不动）。从 `v0.5.0` 起改用 `0.x.y`——阿里云百炼 Token Plan 这个 Provider 仍处于快速试错
 > 阶段，`0.x` 更准确地反映"尚未达到可对外承诺稳定性"的真实状态，待其稳定后再规划重新回到 `1.x`。
 
+## [0.5.5] - 2026-09-01
+
+### 进展与新发现
+
+`v0.5.4` 的登录判定修复**确认生效**：真实登录后抓到的 Cookie 从 17 个（全是匿名追踪）增加到
+31 个，出现了 `JSESSIONID` / `XSRF-TOKEN` / `login_aliyunid_ticket` / `login_aliyunid_csrf` /
+`yunpk` 等真正的登录会话凭证，SEC_TOKEN 也首次成功取到（22 字符）。查询因此推进到了下一步。
+
+### 新问题定位：原定的网关地址已不可用
+
+用户现在遇到"百炼用量接口返回异常状态（HTTP 302）"。用真实登录态做了对照实验：
+
+| 请求变体 | 结果 |
+|---|---|
+| 当前实现（Origin + Referer + form 带 SEC_TOKEN） | 302 → `err.taobao.com/error1.html` |
+| \+ 浏览器 User-Agent + `X-Requested-With: XMLHttpRequest` | 完全相同 |
+| \+ SEC_TOKEN 放进请求头（`sec-token` / `x-xsrf-token`） | 完全相同 |
+| \+ SEC_TOKEN 放进 query string | 完全相同 |
+| **对照组：伪造一个不存在的 action** | **完全相同** |
+| **对照组：完全不带 Cookie** | **完全相同** |
+
+两个对照组返回与真实请求**完全一致**，证明请求在到达业务逻辑之前就被网关/路由层统一拒绝，
+与鉴权信息、请求头形式均无关——即最初需求文档里给出的
+`bailian-cs.console.aliyun.com/data/api.json` 这个地址，对当前的百炼控制台已不适用。
+
+### 本版改动（诊断）
+
+- 网络监听改为**接口发现**：登录成功后不再立即关窗，先让页面继续运行 6 秒，把 Token Plan
+  额度页真正调用的数据接口录下来。命中 `per1WeekPercentage` / `per1WeekResetTime` 目标字段
+  的响应会被高亮标记（`*** TARGET FIELDS FOUND ***`），其余用量/订阅相关 API 调用也记录
+  URL 与状态码。全程只记录 URL、HTTP 方法、状态码、响应体长度，**不记录响应体内容**。
+- 登录成功后的状态提示改为"已登录，正在读取额度信息…"。
+
+Core+Tests 241/241 通过。下一步依据真实接口地址重写查询逻辑。
+
 ## [0.5.4] - 2026-09-01
 
 ### 修复（找到了 SEC_TOKEN 取不到的真正根因）

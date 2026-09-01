@@ -135,10 +135,42 @@ public partial class AlibabaLoginWindow : Window
 
                     using var reader = new StreamReader(stream);
                     var body = await reader.ReadToEndAsync();
+
+                    var diagPath = Path.Combine(Path.GetTempPath(), "quotaflow-tokenplan-network-diag.txt");
+
                     if (body.Contains("SEC_TOKEN", StringComparison.Ordinal))
                     {
-                        File.AppendAllText(Path.Combine(Path.GetTempPath(), "quotaflow-tokenplan-network-diag.txt"),
+                        File.AppendAllText(diagPath,
                             $"[{DateTime.Now:HH:mm:ss}] Response body contains 'SEC_TOKEN': {url} (Content-Type: {contentType}, length: {body.Length})\n");
+                    }
+
+                    // 关键诊断：实测原定的网关地址（bailian-cs.console.aliyun.com/data/api.json）
+                    // 对任何请求都统一 302 到 err.taobao.com——伪造 action、不带 Cookie 的对照组
+                    // 返回完全一致，证明请求在路由层就被拒，该地址已不适用于当前控制台。
+                    // 这里改为观察控制台自己真正调用了哪个用量/订阅接口：只记录 URL、状态码、
+                    // 以及"响应体里是否出现目标字段名"，绝不记录响应体内容本身。
+                    var isApiCall = url.Contains("/api", StringComparison.OrdinalIgnoreCase)
+                                    || url.Contains("api.json", StringComparison.OrdinalIgnoreCase)
+                                    || url.Contains("/data/", StringComparison.OrdinalIgnoreCase);
+                    var mentionsUsage = url.Contains("usage", StringComparison.OrdinalIgnoreCase)
+                                        || url.Contains("tokenplan", StringComparison.OrdinalIgnoreCase)
+                                        || url.Contains("token-plan", StringComparison.OrdinalIgnoreCase)
+                                        || url.Contains("subscription", StringComparison.OrdinalIgnoreCase)
+                                        || url.Contains("quota", StringComparison.OrdinalIgnoreCase)
+                                        || url.Contains("remain", StringComparison.OrdinalIgnoreCase);
+                    var bodyHasTargetFields = body.Contains("per1WeekPercentage", StringComparison.Ordinal)
+                                              || body.Contains("per1WeekResetTime", StringComparison.Ordinal);
+
+                    if (bodyHasTargetFields)
+                    {
+                        // 命中目标字段 = 找到了真正提供额度数据的接口，这是最高价值的线索。
+                        File.AppendAllText(diagPath,
+                            $"[{DateTime.Now:HH:mm:ss}] *** TARGET FIELDS FOUND *** {args.Request.Method} {url} -> HTTP {args.Response.StatusCode} (len {body.Length})\n");
+                    }
+                    else if (mentionsUsage || (isApiCall && contentType.Contains("json", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        File.AppendAllText(diagPath,
+                            $"[{DateTime.Now:HH:mm:ss}] api call: {args.Request.Method} {url} -> HTTP {args.Response.StatusCode} (len {body.Length})\n");
                     }
                 }
                 catch (Exception ex)
@@ -251,6 +283,12 @@ public partial class AlibabaLoginWindow : Window
 
         _loginSucceeded = true;
         _detectTimer.Stop();
+
+        // 登录成功后先让页面继续跑一会儿，等 Token Plan 额度页把它自己的数据接口调完——
+        // 我们需要通过网络监听观察控制台真正调用的是哪个用量接口（原定的网关地址已被实测
+        // 证明对任何请求都统一 302 拒绝）。立刻关窗会错过这些请求。
+        StatusHint.Text = "已登录，正在读取额度信息…";
+        await Task.Delay(6000);
 
         string cookieString;
         try

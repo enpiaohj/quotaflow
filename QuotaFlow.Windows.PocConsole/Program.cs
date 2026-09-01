@@ -30,6 +30,8 @@ switch (args[0])
         return await CheckAllAsync(store);
     case "diag-tokenplan":
         return await DiagTokenPlanAsync(store);
+    case "diag-gateway":
+        return await DiagGatewayAsync(store);
     case "clear-tokenplan":
         store.DeleteLarge("alibaba:tokenplan:consoleCookie");
         store.Delete("alibaba:tokenplan:secToken");
@@ -209,6 +211,143 @@ static async Task<int> DiagTokenPlanAsync(SecureCredentialStore store)
     Console.WriteLine("=== alibaba-tokenplan ===");
     var snapshot = await provider.GetSnapshotAsync();
     PrintSnapshot(snapshot);
+    return 0;
+}
+
+static async Task<int> DiagGatewayAsync(SecureCredentialStore store)
+{
+    // 临时诊断：网关返回 302，试几种请求头/参数组合，定位缺了什么。
+    // 只打印状态码、重定向目标、响应体前若干字符（不含 Cookie/SEC_TOKEN 值本身）。
+    var cookie = store.TryReadLarge("alibaba:tokenplan:consoleCookie");
+    var secToken = store.TryRead("alibaba:tokenplan:secToken", useUtf8: true);
+    if (cookie is null || string.IsNullOrEmpty(secToken))
+    {
+        Console.WriteLine("未配置登录态，请先在应用里完成一键登录。");
+        return 1;
+    }
+
+    const string gatewayUrl = "https://bailian-cs.console.aliyun.com/data/api.json";
+    const string query = "action=BroadScopeAspnGateway&product=sfm_bailian&api=zeldaHttp.apikeyMgr.%2Ftokenplan%2Fpersonal%2Fapi%2Fv2%2Fusage";
+    const string ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0";
+    const string consoleUrl = "https://bailian.console.aliyun.com/cn-beijing?tab=plan";
+
+    // 不自动跟随重定向，才能看到 302 本身和 Location。
+    using var handler = new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false };
+    using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(20) };
+
+    async Task Attempt(string label, Action<HttpRequestMessage> configure)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Post, $"{gatewayUrl}?{query}");
+        req.Headers.TryAddWithoutValidation("Cookie", cookie);
+        configure(req);
+        try
+        {
+            using var resp = await http.SendAsync(req);
+            var location = resp.Headers.Location?.ToString() ?? "(none)";
+            var body = await resp.Content.ReadAsStringAsync();
+            var preview = body.Length > 160 ? body[..160] : body;
+            preview = preview.Replace('\n', ' ').Replace('\r', ' ');
+            Console.WriteLine($"[{label}] HTTP {(int)resp.StatusCode} | Location: {location} | BodyLen: {body.Length}");
+            Console.WriteLine($"    body preview: {preview}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{label}] EXCEPTION {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    // A：当前实现（Origin + Referer + form body 里带 SEC_TOKEN）
+    await Attempt("A current", req =>
+    {
+        req.Headers.TryAddWithoutValidation("Origin", "https://bailian.console.aliyun.com");
+        req.Headers.TryAddWithoutValidation("Referer", consoleUrl);
+        req.Content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["SEC_TOKEN"] = secToken, ["region"] = "cn-beijing",
+        });
+    });
+
+    // B：A + 浏览器 UA + XHR 标记（网关常据此判断是否合法浏览器 XHR）
+    await Attempt("B +UA +XHR", req =>
+    {
+        req.Headers.TryAddWithoutValidation("Origin", "https://bailian.console.aliyun.com");
+        req.Headers.TryAddWithoutValidation("Referer", consoleUrl);
+        req.Headers.TryAddWithoutValidation("User-Agent", ua);
+        req.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
+        req.Headers.TryAddWithoutValidation("Accept", "application/json, text/plain, */*");
+        req.Content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["SEC_TOKEN"] = secToken, ["region"] = "cn-beijing",
+        });
+    });
+
+    // C：B + SEC_TOKEN 同时放到请求头（很多阿里云控制台网关是从 header 读的）
+    await Attempt("C +SEC_TOKEN header", req =>
+    {
+        req.Headers.TryAddWithoutValidation("Origin", "https://bailian.console.aliyun.com");
+        req.Headers.TryAddWithoutValidation("Referer", consoleUrl);
+        req.Headers.TryAddWithoutValidation("User-Agent", ua);
+        req.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
+        req.Headers.TryAddWithoutValidation("Accept", "application/json, text/plain, */*");
+        req.Headers.TryAddWithoutValidation("sec-token", secToken);
+        req.Headers.TryAddWithoutValidation("x-xsrf-token", secToken);
+        req.Content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["SEC_TOKEN"] = secToken, ["region"] = "cn-beijing",
+        });
+    });
+
+    // E：对照组——故意用一个不存在的 action。如果它和上面返回完全一样的 302，
+    // 说明请求在到达业务逻辑前就被网关/路由层拒了，跟 SEC_TOKEN 和请求头都无关。
+    await Attempt("E bogus action (control)", req =>
+    {
+        req.RequestUri = new Uri($"{gatewayUrl}?action=NoSuchActionForDiagnosis&product=sfm_bailian");
+        req.Headers.TryAddWithoutValidation("Origin", "https://bailian.console.aliyun.com");
+        req.Headers.TryAddWithoutValidation("Referer", consoleUrl);
+        req.Headers.TryAddWithoutValidation("User-Agent", ua);
+        req.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
+        req.Content = new FormUrlEncodedContent(new Dictionary<string, string> { ["region"] = "cn-beijing" });
+    });
+
+    // F：对照组——完全不带 Cookie 访问同一个真实接口。若与 A 结果一致，
+    // 说明服务端根本没读到我们的登录态（例如域名/路径不对）。
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Post, $"{gatewayUrl}?{query}");
+        req.Headers.TryAddWithoutValidation("Origin", "https://bailian.console.aliyun.com");
+        req.Headers.TryAddWithoutValidation("Referer", consoleUrl);
+        req.Headers.TryAddWithoutValidation("User-Agent", ua);
+        req.Content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["SEC_TOKEN"] = secToken, ["region"] = "cn-beijing",
+        });
+        try
+        {
+            using var resp = await http.SendAsync(req);
+            var location = resp.Headers.Location?.ToString() ?? "(none)";
+            Console.WriteLine($"[F no-cookie (control)] HTTP {(int)resp.StatusCode} | Location: {location}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[F no-cookie (control)] EXCEPTION {ex.GetType().Name}");
+        }
+    }
+
+    // D：C + SEC_TOKEN 也放进 query string（部分网关从 query 读）
+    await Attempt("D +SEC_TOKEN query", req =>
+    {
+        req.RequestUri = new Uri($"{gatewayUrl}?{query}&SEC_TOKEN={Uri.EscapeDataString(secToken)}");
+        req.Headers.TryAddWithoutValidation("Origin", "https://bailian.console.aliyun.com");
+        req.Headers.TryAddWithoutValidation("Referer", consoleUrl);
+        req.Headers.TryAddWithoutValidation("User-Agent", ua);
+        req.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
+        req.Headers.TryAddWithoutValidation("Accept", "application/json, text/plain, */*");
+        req.Headers.TryAddWithoutValidation("sec-token", secToken);
+        req.Content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["SEC_TOKEN"] = secToken, ["region"] = "cn-beijing",
+        });
+    });
+
     return 0;
 }
 
