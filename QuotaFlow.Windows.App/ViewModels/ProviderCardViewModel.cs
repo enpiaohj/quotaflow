@@ -172,7 +172,26 @@ public sealed partial class ProviderCardViewModel : ObservableObject
         }
 
         UpdateLastUpdatedText(now);
+        UpdateRateLimitGuidance(now);
         Compact.Refresh();
+    }
+
+
+    /// <summary>
+    /// 限流期间让"还要等多久"跟着时间走。
+    ///
+    /// 收到 429 时算出的那句"将在 3 分钟后重试"是静态文字，七八分钟后它还写着"3 分钟后"，
+    /// 而旁边"上次更新"的分钟数一直在涨——用户看到的是「数字在变旧、承诺没兑现」，
+    /// 很自然会以为程序卡住了。RetryAfter 存的是绝对时刻，每次 tick 重算即可。
+    /// </summary>
+    private void UpdateRateLimitGuidance(DateTimeOffset now)
+    {
+        if (_lastSnapshot is not { State: ProviderState.RateLimited } snapshot)
+        {
+            return;
+        }
+
+        UserGuidance = RateLimitCountdown.BuildGuidance(snapshot.RetryAfter, now);
     }
 
     private void UpdateLastUpdatedText(DateTimeOffset now)

@@ -116,11 +116,13 @@ public sealed class ClaudeQuotaProvider : IQuotaProvider
             if (response.StatusCode == HttpStatusCode.TooManyRequests)
             {
                 // 以服务端的 Retry-After 为准；它没给值时由 RefreshCoordinator 回退到默认冷却。
-                var retryAfter = RetryAfterReader.Read(response.Headers, DateTimeOffset.UtcNow);
-                var guidance = retryAfter is { } until
-                    ? $"查询过于频繁，将在 {FormatWait(until - DateTimeOffset.UtcNow)}后自动重试"
-                    : "查询过于频繁，稍后会自动重试";
-                return BuildSnapshot(ProviderState.RateLimited, ErrorCategory.RateLimited, guidance, retryAfter);
+                var now = DateTimeOffset.UtcNow;
+                var retryAfter = RetryAfterReader.Read(response.Headers, now);
+                // 这里生成的是初始文案；界面每次 tick 会用 RetryAfter（绝对时刻）重算倒计时，
+                // 否则这句话会一直停在收到 429 的那一刻，而旁边"上次更新"的分钟数不断变大，
+                // 看起来就像程序卡住了。
+                return BuildSnapshot(ProviderState.RateLimited, ErrorCategory.RateLimited,
+                    RateLimitCountdown.BuildGuidance(retryAfter, now), retryAfter);
             }
 
             if (!response.IsSuccessStatusCode)
@@ -269,19 +271,6 @@ public sealed class ClaudeQuotaProvider : IQuotaProvider
         ErrorCategory = ErrorCategory.ResponseFormat,
         UserGuidance = guidance,
     };
-
-    /// <summary>把等待时长说成人话，避免给用户看"00:03:00"这种机器格式。</summary>
-    private static string FormatWait(TimeSpan wait)
-    {
-        if (wait < TimeSpan.FromMinutes(1))
-        {
-            return $"{Math.Max(1, (int)Math.Ceiling(wait.TotalSeconds))} 秒";
-        }
-
-        return wait < TimeSpan.FromHours(1)
-            ? $"{(int)Math.Ceiling(wait.TotalMinutes)} 分钟"
-            : $"{wait.TotalHours:F1} 小时";
-    }
 
     private ProviderSnapshot BuildSnapshot(ProviderState state, ErrorCategory category, string guidance,
         DateTimeOffset? retryAfter = null) => new()
