@@ -41,6 +41,15 @@ public sealed record ProviderSnapshot
     public bool IsFromCache { get; init; }
 
     /// <summary>
+    /// 被服务端限流（HTTP 429）时，服务端要求的最早重试时刻。
+    ///
+    /// 记录的是<b>绝对时刻</b>而不是"还要等多久"：这样它随快照一起写入本地缓存后，重启应用
+    /// 也依然有效——否则每次重启都会清零冷却、立刻再打一次接口，把刚被限流的情况直接复现。
+    /// 取自 429 响应的 <c>Retry-After</c> 头；服务端没给时为 null，由调用方回退到默认冷却。
+    /// </summary>
+    public DateTimeOffset? RetryAfter { get; init; }
+
+    /// <summary>
     /// 快照中"最紧张"的剩余百分比（多个窗口取最小值），用于托盘图标/汇总视图判断整体健康度。
     /// 只统计成功解析的窗口（<see cref="QuotaWindow.IsError"/> == false）——某个窗口取值失败时，
     /// 它的占位 0% 绝不能被当成"这个平台只剩 0% 了"。全部窗口都失败或没有任何窗口时返回 null，

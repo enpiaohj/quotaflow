@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using QuotaFlow.Windows.Core.Authentication;
 using QuotaFlow.Windows.Core.Models;
+using QuotaFlow.Windows.Core.Services;
 
 namespace QuotaFlow.Windows.Core.Providers;
 
@@ -114,7 +115,12 @@ public sealed class ClaudeQuotaProvider : IQuotaProvider
 
             if (response.StatusCode == HttpStatusCode.TooManyRequests)
             {
-                return BuildSnapshot(ProviderState.RateLimited, ErrorCategory.RateLimited, "查询过于频繁，请稍后再试");
+                // 以服务端的 Retry-After 为准；它没给值时由 RefreshCoordinator 回退到默认冷却。
+                var retryAfter = RetryAfterReader.Read(response.Headers, DateTimeOffset.UtcNow);
+                var guidance = retryAfter is { } until
+                    ? $"查询过于频繁，将在 {FormatWait(until - DateTimeOffset.UtcNow)}后自动重试"
+                    : "查询过于频繁，稍后会自动重试";
+                return BuildSnapshot(ProviderState.RateLimited, ErrorCategory.RateLimited, guidance, retryAfter);
             }
 
             if (!response.IsSuccessStatusCode)
@@ -264,7 +270,21 @@ public sealed class ClaudeQuotaProvider : IQuotaProvider
         UserGuidance = guidance,
     };
 
-    private ProviderSnapshot BuildSnapshot(ProviderState state, ErrorCategory category, string guidance) => new()
+    /// <summary>把等待时长说成人话，避免给用户看"00:03:00"这种机器格式。</summary>
+    private static string FormatWait(TimeSpan wait)
+    {
+        if (wait < TimeSpan.FromMinutes(1))
+        {
+            return $"{Math.Max(1, (int)Math.Ceiling(wait.TotalSeconds))} 秒";
+        }
+
+        return wait < TimeSpan.FromHours(1)
+            ? $"{(int)Math.Ceiling(wait.TotalMinutes)} 分钟"
+            : $"{wait.TotalHours:F1} 小时";
+    }
+
+    private ProviderSnapshot BuildSnapshot(ProviderState state, ErrorCategory category, string guidance,
+        DateTimeOffset? retryAfter = null) => new()
     {
         ProviderId = ProviderId,
         DisplayName = "Claude",
@@ -272,5 +292,6 @@ public sealed class ClaudeQuotaProvider : IQuotaProvider
         DataSource = _dataSourceUrl,
         ErrorCategory = category,
         UserGuidance = guidance,
+        RetryAfter = retryAfter,
     };
 }

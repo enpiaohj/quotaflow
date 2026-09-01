@@ -3,6 +3,7 @@ using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using QuotaFlow.Windows.Core.Models;
+using QuotaFlow.Windows.Core.Services;
 
 namespace QuotaFlow.Windows.App.ViewModels;
 
@@ -109,8 +110,13 @@ public sealed partial class ProviderCardViewModel : ObservableObject
         }
     }
 
-    public void Apply(ProviderSnapshot snapshot)
+    public void Apply(ProviderSnapshot incoming)
     {
+        // 被限流时服务端不会返回额度数据，直接按它渲染会把几分钟前刚拿到的真实数字整片抹掉，
+        // 用户看到的就是"额度突然没了"。这里保留上次的真实数据继续展示，同时采用本次的失败
+        // 状态与提示；LastUpdatedAt 不动，界面上的"x 分钟前更新"仍然如实反映数据的实际时间。
+        var snapshot = TransientFailureMerger.Merge(_lastSnapshot, incoming);
+
         _lastSnapshot = snapshot;
         DisplayName = snapshot.DisplayName;
         State = snapshot.State;

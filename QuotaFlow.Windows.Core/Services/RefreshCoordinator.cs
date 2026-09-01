@@ -63,11 +63,31 @@ public sealed class RefreshCoordinator
         {
             _providers = list;
             _inFlight.Clear();
+
             // 定义已经变了（比如自定义平台的接口地址被改掉），冷却期里缓存的旧快照对应的是
-            // 旧定义，继续复用会把新配置该有的效果延迟到冷却期结束之后才生效，一并清空。
-            _lastCompletedAt.Clear();
-            _lastSnapshot.Clear();
-            _lastCooldown.Clear();
+            // 旧定义，继续复用会把新配置该有的效果延迟到冷却期结束之后才生效，所以要清空。
+            //
+            // 但"被服务端限流"是个例外，必须保留：限流是远端配额的状态，跟我们本地怎么定义
+            // provider 毫无关系，清掉它并不能让服务端提前放行。而 Rebuild 后紧跟着就是一次
+            // RefreshAllAsync（保存设置即触发），清空等于每保存一次设置就强行绕过限流冷却打
+            // 一次接口——这正是"Claude 偶尔提示请求过于频繁"的触发源之一。
+            var preserved = _lastSnapshot
+                .Where(kv => kv.Value.State == ProviderState.RateLimited
+                             && kv.Value.RetryAfter is { } until && until > _now())
+                .Select(kv => kv.Key)
+                .ToHashSet(StringComparer.Ordinal);
+
+            foreach (var id in _lastSnapshot.Keys.ToList())
+            {
+                if (preserved.Contains(id))
+                {
+                    continue;
+                }
+
+                _lastCompletedAt.Remove(id);
+                _lastSnapshot.Remove(id);
+                _lastCooldown.Remove(id);
+            }
         }
     }
 
@@ -155,16 +175,68 @@ public sealed class RefreshCoordinator
     private async Task<ProviderSnapshot> RunAndRecordAsync(IQuotaProvider provider, CancellationToken cancellationToken)
     {
         var snapshot = await RunAsync(provider, cancellationToken);
+        var completedAt = _now();
         lock (_gate)
         {
-            _lastCompletedAt[provider.ProviderId] = _now();
+            _lastCompletedAt[provider.ProviderId] = completedAt;
             _lastSnapshot[provider.ProviderId] = snapshot;
-            _lastCooldown[provider.ProviderId] = snapshot.State == ProviderState.RateLimited
-                ? _rateLimitedCooldown
-                : _minRefreshInterval;
+            _lastCooldown[provider.ProviderId] = CooldownFor(snapshot, completedAt);
         }
 
         return snapshot;
+    }
+
+    /// <summary>
+    /// 这次查询之后该冷却多久。
+    ///
+    /// 被限流时优先采用服务端 <c>Retry-After</c> 换算出的时刻——只有服务端知道配额什么时候恢复。
+    /// 早期实现一律套用本地固定的 <see cref="_rateLimitedCooldown"/>，服务端要求等更久时就会
+    /// 提前重试、再次撞上 429，用户反复看到"请求过于频繁"。服务端没给值时才回退到固定时长，
+    /// 且取两者中更长的那个，避免服务端给了个比本地兜底还短的值导致打得更密。
+    /// </summary>
+    private TimeSpan CooldownFor(ProviderSnapshot snapshot, DateTimeOffset completedAt)
+    {
+        if (snapshot.State != ProviderState.RateLimited)
+        {
+            return _minRefreshInterval;
+        }
+
+        if (snapshot.RetryAfter is not { } until || until <= completedAt)
+        {
+            return _rateLimitedCooldown;
+        }
+
+        var serverAsked = until - completedAt;
+        return serverAsked > _rateLimitedCooldown ? serverAsked : _rateLimitedCooldown;
+    }
+
+    /// <summary>
+    /// 用本地缓存里恢复出来的快照重建冷却状态（应用启动时调用）。
+    ///
+    /// 冷却此前只存在于内存里，重启即清零；而"启动时立即刷新"默认开启，于是每次重启都会
+    /// 立刻再打一次接口——哪怕几秒前才刚被限流。限流是远端配额的状态，不会因为我们重启就
+    /// 复位，所以这里按快照里记录的绝对重试时刻把冷却接上。
+    /// </summary>
+    public void SeedFromCache(IReadOnlyDictionary<string, ProviderSnapshot> cached)
+    {
+        var now = _now();
+        lock (_gate)
+        {
+            foreach (var (providerId, snapshot) in cached)
+            {
+                if (snapshot.State != ProviderState.RateLimited ||
+                    snapshot.RetryAfter is not { } until ||
+                    until <= now)
+                {
+                    continue;
+                }
+
+                // 只接管"还没到重试时刻"的限流快照：其余情况让启动刷新照常进行。
+                _lastCompletedAt[providerId] = now;
+                _lastSnapshot[providerId] = snapshot;
+                _lastCooldown[providerId] = until - now;
+            }
+        }
     }
 
     private static async Task<ProviderSnapshot> RunAsync(IQuotaProvider provider, CancellationToken cancellationToken)

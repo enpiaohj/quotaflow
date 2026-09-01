@@ -47,6 +47,25 @@ public class RefreshCoordinatorTests
         }
     }
 
+    /// <summary>限流并附带服务端 Retry-After（绝对时刻）的 provider。</summary>
+    private sealed class RateLimitedWithRetryAfterProvider(string id, Func<DateTimeOffset> retryAfter) : IQuotaProvider
+    {
+        public int CallCount;
+        public string ProviderId => id;
+
+        public Task<ProviderSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref CallCount);
+            return Task.FromResult(new ProviderSnapshot
+            {
+                ProviderId = id,
+                DisplayName = id,
+                State = ProviderState.RateLimited,
+                RetryAfter = retryAfter(),
+            });
+        }
+    }
+
     private sealed class ThrowingProvider(string id) : IQuotaProvider
     {
         public string ProviderId => id;
@@ -118,6 +137,122 @@ public class RefreshCoordinatorTests
 
         Assert.Equal(1, claude.CallCount);
         Assert.Equal(1, codex.CallCount);
+    }
+
+    // ---- 限流冷却以服务端 Retry-After 为准（"Claude 偶尔提示请求过于频繁"的三个根因） ----
+
+    [Fact]
+    public async Task RateLimited_ServerRetryAfterLongerThanDefault_ServerValueWins()
+    {
+        // 服务端说要等 30 分钟，本地默认冷却只有 3 分钟。若仍按本地值，3 分钟后就会再打一次
+        // 并再次撞上 429——这正是用户反复看到"请求过于频繁"的直接原因。
+        var clock = new FakeClock();
+        var provider = new RateLimitedWithRetryAfterProvider("claude", () => clock.Now.AddMinutes(30));
+        var coordinator = new RefreshCoordinator(
+            [provider], minRefreshInterval: TimeSpan.FromSeconds(18),
+            rateLimitedCooldown: TimeSpan.FromMinutes(3), now: () => clock.Now);
+
+        await coordinator.RefreshAsync("claude");
+
+        clock.Now = clock.Now.Add(TimeSpan.FromMinutes(10)); // 已过本地默认冷却，但远未到服务端要求
+        await coordinator.RefreshAsync("claude");
+        Assert.Equal(1, provider.CallCount);
+
+        clock.Now = clock.Now.Add(TimeSpan.FromMinutes(21)); // 越过服务端要求的时刻
+        await coordinator.RefreshAsync("claude");
+        Assert.Equal(2, provider.CallCount);
+    }
+
+    [Fact]
+    public async Task RateLimited_ServerRetryAfterShorterThanDefault_LocalFloorStillApplies()
+    {
+        // 服务端给了个比本地兜底还短的值时不能变得更激进，取两者中更长的那个。
+        var clock = new FakeClock();
+        var provider = new RateLimitedWithRetryAfterProvider("claude", () => clock.Now.AddSeconds(5));
+        var coordinator = new RefreshCoordinator(
+            [provider], minRefreshInterval: TimeSpan.FromSeconds(18),
+            rateLimitedCooldown: TimeSpan.FromMinutes(3), now: () => clock.Now);
+
+        await coordinator.RefreshAsync("claude");
+        clock.Now = clock.Now.Add(TimeSpan.FromSeconds(30));
+        await coordinator.RefreshAsync("claude");
+
+        Assert.Equal(1, provider.CallCount);
+    }
+
+    [Fact]
+    public async Task Rebuild_PreservesActiveRateLimitCooldown()
+    {
+        // 限流是远端配额的状态，跟本地 provider 定义无关，Rebuild 清掉它并不能让服务端提前放行。
+        // 而保存设置会 Rebuild + 立即 RefreshAll，清空等于每次保存设置都强行绕过限流冷却。
+        var clock = new FakeClock();
+        var provider = new RateLimitedWithRetryAfterProvider("claude", () => clock.Now.AddMinutes(30));
+        var coordinator = new RefreshCoordinator(
+            [provider], minRefreshInterval: TimeSpan.FromSeconds(18),
+            rateLimitedCooldown: TimeSpan.FromMinutes(3), now: () => clock.Now);
+
+        await coordinator.RefreshAsync("claude");
+        Assert.Equal(1, provider.CallCount);
+
+        coordinator.Rebuild([provider]);
+        clock.Now = clock.Now.Add(TimeSpan.FromMinutes(1));
+        await coordinator.RefreshAsync("claude");
+
+        Assert.Equal(1, provider.CallCount);
+    }
+
+    [Fact]
+    public async Task SeedFromCache_ActiveRateLimit_BlocksStartupRefresh()
+    {
+        // 冷却此前只在内存里，重启即清零，而"启动时立即刷新"默认开启——每次重启都会立刻
+        // 再打一次接口，哪怕几秒前才刚被限流。
+        var clock = new FakeClock();
+        var provider = new FakeProvider("claude", TimeSpan.Zero);
+        var coordinator = new RefreshCoordinator(
+            [provider], minRefreshInterval: TimeSpan.FromSeconds(18),
+            rateLimitedCooldown: TimeSpan.FromMinutes(3), now: () => clock.Now);
+
+        coordinator.SeedFromCache(new Dictionary<string, ProviderSnapshot>
+        {
+            ["claude"] = new()
+            {
+                ProviderId = "claude",
+                DisplayName = "Claude",
+                State = ProviderState.RateLimited,
+                RetryAfter = clock.Now.AddMinutes(20),
+            },
+        });
+
+        await coordinator.RefreshAsync("claude");
+        Assert.Equal(0, provider.CallCount);
+
+        clock.Now = clock.Now.Add(TimeSpan.FromMinutes(21));
+        await coordinator.RefreshAsync("claude");
+        Assert.Equal(1, provider.CallCount);
+    }
+
+    [Fact]
+    public async Task SeedFromCache_ExpiredRateLimit_DoesNotBlockStartupRefresh()
+    {
+        // 缓存里的限流时刻已经过去时不能继续拦——那等于把平台永久冻住。
+        var clock = new FakeClock();
+        var provider = new FakeProvider("claude", TimeSpan.Zero);
+        var coordinator = new RefreshCoordinator([provider], now: () => clock.Now);
+
+        coordinator.SeedFromCache(new Dictionary<string, ProviderSnapshot>
+        {
+            ["claude"] = new()
+            {
+                ProviderId = "claude",
+                DisplayName = "Claude",
+                State = ProviderState.RateLimited,
+                RetryAfter = clock.Now.AddMinutes(-1),
+            },
+        });
+
+        await coordinator.RefreshAsync("claude");
+
+        Assert.Equal(1, provider.CallCount);
     }
 
     [Fact]

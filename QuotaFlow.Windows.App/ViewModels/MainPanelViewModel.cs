@@ -192,6 +192,10 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
         var cached = _cache.Load();
         var staleAfter = TimeSpan.FromMinutes(Math.Max(_settings.AutoRefreshIntervalMinutes * 3, 15));
 
+        // 把上次退出时还没过期的限流冷却接回来，别让"启动时立即刷新"在配额尚未恢复时
+        // 又打一次接口。必须在下面的首轮刷新之前完成。
+        _coordinator.SeedFromCache(cached);
+
         foreach (var card in Cards)
         {
             if (cached.TryGetValue(card.ProviderId, out var snapshot))
