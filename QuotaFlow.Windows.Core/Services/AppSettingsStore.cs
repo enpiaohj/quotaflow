@@ -32,6 +32,16 @@ public sealed class AppSettingsStore
     /// <summary>设置文件所在目录，供设置页显示路径并提供"打开配置目录"入口。</summary>
     public string DataDirectory => Path.GetDirectoryName(_settingsPath) ?? string.Empty;
 
+    /// <summary>
+    /// 写盘失败时的通知回调（异常本身，不含设置内容）。
+    ///
+    /// 写失败必须静默降级——它曾经把整个应用在启动阶段带崩、连托盘图标都来不及创建。但"不崩"
+    /// 不等于"不说"：实测遇到过窗口显示设置连续多次保存全部失败，界面照常显示新值、磁盘一个
+    /// 字节没变，用户完全无从察觉，重启后才发现设置全丢。静默吞异常同时也违反项目规则
+    /// "不隐藏 Error"。所以这里保留降级，但把失败暴露出去，由组合根写进 crash.log。
+    /// </summary>
+    public Action<Exception>? OnSaveFailed { get; set; }
+
     public AppSettingsStore(string? settingsPathOverride = null)
     {
         _settingsPath = settingsPathOverride ?? GetDefaultSettingsPath();
@@ -229,9 +239,33 @@ public sealed class AppSettingsStore
         return settings;
     }
 
-    public void Save(AppSettings settings) => SaveCore(settings);
+    /// <summary>写盘成功返回 true；失败时返回 false 并触发 <see cref="OnSaveFailed"/>，不抛异常。</summary>
+    public bool Save(AppSettings settings) => SaveCore(settings);
 
-    private void SaveCore(AppSettings settings)
+    /// <summary>
+    /// 读-改-写：从磁盘读出当前设置，只修改 <paramref name="mutate"/> 指定的部分，再整体写回。
+    ///
+    /// 设置有多条独立的写入路径（设置页、面板卡片顺序、已用/剩余切换、窗口显示模式与位置），
+    /// 各自只关心自己那几个字段。谁要是拿着一份<b>启动时读进来、之后再没刷新过</b>的快照整份
+    /// 写盘，就会把这期间别的路径写进去的改动一起抹掉。
+    ///
+    /// 实测发生过两次同类事故：一次是设置页保存把整个 WindowDisplay 重置
+    /// （见 <see cref="SettingsSnapshotBuilder"/>）；一次是切换显示模式后再点卡片 ▲/▼，
+    /// 模式改动被面板持有的陈旧快照覆盖回去。
+    ///
+    /// 所以凡是"只想改几个字段"的调用方都应该走这里，而不是自己 Load/Save 或直接
+    /// <see cref="Save"/> 一份记不清有多新的对象。
+    /// </summary>
+    public bool Update(Action<AppSettings> mutate)
+    {
+        ArgumentNullException.ThrowIfNull(mutate);
+
+        var settings = Load();
+        mutate(settings);
+        return SaveCore(settings);
+    }
+
+    private bool SaveCore(AppSettings settings)
     {
         try
         {
@@ -252,9 +286,21 @@ public sealed class AppSettingsStore
             };
 
             File.WriteAllText(_settingsPath, JsonSerializer.Serialize(envelope, JsonOptions));
+            return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CryptographicException or ArgumentException)
         {
+            // 把失败暴露给调用方（写日志/提示用户），但不向上抛——见 OnSaveFailed 的说明。
+            try
+            {
+                OnSaveFailed?.Invoke(ex);
+            }
+            catch (Exception)
+            {
+                // 通知回调自身出错不能反过来影响保存流程。
+            }
+
+            return false;
             // 写失败静默降级：与原实现一致，绝不让保存设置拖垮主流程。ArgumentException 补充于
             // 实测事故——某些字段（如显示模式的窗口坐标）一旦意外携带 NaN/Infinity，
             // System.Text.Json 会在序列化阶段直接抛出，之前没接住，导致整个应用在启动时

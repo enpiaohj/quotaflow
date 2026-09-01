@@ -403,6 +403,45 @@ public sealed class AppSettingsStoreTests : IDisposable
         Assert.Equal(WindowPresentationMode.TrayPopup, loaded.WindowDisplay.Mode);
     }
 
+    // ---- Update：读-改-写，防止陈旧快照覆盖其它路径的改动 ----
+
+    [Fact]
+    public void Update_OnlyChangesTargetedField_PreservingConcurrentWritesFromOtherPaths()
+    {
+        // 复现真实事故：面板持有一份启动时读进来的快照，期间窗口显示协调器把新的显示模式
+        // 写进了磁盘；此时面板若整份写回自己的旧快照，模式改动就被抹掉。
+        _store.Save(new AppSettings
+        {
+            WindowDisplay = new WindowDisplaySettings { Mode = WindowPresentationMode.TrayPopup },
+            PlatformOrder = ["claude", "codex"],
+        });
+
+        // 另一条路径（协调器）改了显示模式并落盘
+        _store.Update(s => s.WindowDisplay.Mode = WindowPresentationMode.Floating);
+
+        // 面板只想改卡片顺序
+        _store.Update(s => s.PlatformOrder = ["codex", "claude"]);
+
+        var loaded = _store.Load();
+        Assert.Equal(WindowPresentationMode.Floating, loaded.WindowDisplay.Mode); // 未被覆盖
+        Assert.Equal(["codex", "claude"], loaded.PlatformOrder);
+    }
+
+    [Fact]
+    public void Update_OnMissingFile_StartsFromDefaultsInsteadOfThrowing()
+    {
+        // 配置文件还不存在时（首次运行）也应该能正常写入，而不是抛异常。
+        _store.Update(s => s.AutoRefreshIntervalMinutes = 12);
+
+        Assert.Equal(12, _store.Load().AutoRefreshIntervalMinutes);
+    }
+
+    [Fact]
+    public void Update_NullMutator_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => _store.Update(null!));
+    }
+
     [Fact]
     public void SaveThenLoad_RoundTripsHiddenPlatforms()
     {

@@ -275,8 +275,10 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
             ? QuotaDisplaySemantic.Remaining
             : QuotaDisplaySemantic.Used;
 
+        // 读-改-写，只动这一个字段。直接 Save(_settings) 会把这份启动时读进来的快照整份写盘，
+        // 抹掉期间由窗口显示协调器等其它路径写进磁盘的改动（详见 AppSettingsStore.Update）。
         _settings.QuotaDisplaySemantic = DisplaySemantic;
-        _settingsStore.Save(_settings);
+        _settingsStore.Update(s => s.QuotaDisplaySemantic = DisplaySemantic);
 
         foreach (var card in Cards)
         {
@@ -340,8 +342,12 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
         }
 
         Cards.Move(index, target);
-        _settings.PlatformOrder = Cards.Select(c => c.ProviderId).ToArray();
-        _settingsStore.Save(_settings);
+
+        // 读-改-写，只动卡片顺序。实测事故：切换显示模式（经协调器写盘）后再点 ▲/▼，
+        // 这里若整份写回 _settings，就会把刚保存的显示模式覆盖回旧值。
+        var order = Cards.Select(c => c.ProviderId).ToArray();
+        _settings.PlatformOrder = order;
+        _settingsStore.Update(s => s.PlatformOrder = order);
         NotifyMoveCommandsCanExecuteChanged();
     }
 

@@ -349,6 +349,13 @@ public sealed class WindowPresentationCoordinator : IWindowPresentationCoordinat
 
     private void Persist()
     {
+        // 写盘前剔除非有限的位置/不透明度。WPF 的 Window.Width/Height 在窗口尚未显式设定尺寸时
+        // 是 NaN，这种值会让 System.Text.Json 抛异常；而设置存储对写失败是静默降级的，于是表现为
+        // "界面改了也生效了，磁盘却一个字节没写，重启全丢且毫无提示"——实测稳定复现过。
+        // 一个坏掉的位置不值得把整份设置的持久化拖垮：丢掉它，保住其余设置。
+        // 同时清理内存状态，否则下一次 Persist 会再撞一次同样的问题。
+        PlacementValidation.RemoveUnpersistablePlacements(_state);
+
         var settings = _loadFullSettings();
         settings.WindowDisplay = CloneState(_state);
         _persistFullSettings(settings);

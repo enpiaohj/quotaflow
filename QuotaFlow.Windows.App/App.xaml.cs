@@ -1,5 +1,6 @@
 using System.IO;
 using System.Net.Http;
+using System.Text;
 using System.Windows;
 using System.Windows.Forms;
 using Microsoft.Win32;
@@ -55,6 +56,12 @@ public partial class App : Application
         _credentialStore = new SecureCredentialStore();
         _cache = new LocalCache();
         _settingsStore = new AppSettingsStore();
+
+        // 设置写盘失败此前是完全静默的——实测遇到过窗口显示设置连续多次保存全部失败，界面照常
+        // 显示新值、磁盘一个字节没变，用户完全无从察觉，重启后才发现设置全丢。降级本身要保留
+        // （写失败曾把启动流程带崩、连托盘图标都来不及创建），但必须留下痕迹。
+        _settingsStore.OnSaveFailed = ex =>
+            LogCrash(new InvalidOperationException("保存设置失败（已静默降级，本次改动未写入磁盘）", ex));
 
         var settings = _settingsStore.Load();
 
@@ -390,8 +397,18 @@ public partial class App : Application
                 File.Move(path, path + ".1", overwrite: true);
             }
 
-            var line = $"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}] {ex.GetType().FullName}: {ex.Message}\n{ex.StackTrace}\n\n";
-            File.AppendAllText(path, line);
+            // 连同 InnerException 链一起记录：包装异常（例如"保存设置失败"）本身说明不了根因，
+            // 真正有用的是里面那个 ArgumentException/IOException 之类。少记这一层，日志里就只剩
+            // 一句"失败了"，等于没记。
+            var sb = new StringBuilder();
+            sb.Append($"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}] {ex.GetType().FullName}: {ex.Message}\n{ex.StackTrace}\n");
+            for (var inner = ex.InnerException; inner is not null; inner = inner.InnerException)
+            {
+                sb.Append($"  --> {inner.GetType().FullName}: {inner.Message}\n{inner.StackTrace}\n");
+            }
+
+            sb.Append('\n');
+            File.AppendAllText(path, sb.ToString());
         }
         catch
         {
