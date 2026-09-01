@@ -30,6 +30,8 @@ switch (args[0])
         return await CheckAllAsync(store);
     case "diag-tokenplan":
         return await DiagTokenPlanAsync(store);
+    case "diag-tokenplan-html":
+        return await DiagTokenPlanHtmlAsync(store);
     case "make-icon":
         return MakeIcon(args);
     case "preview-icon":
@@ -189,6 +191,49 @@ static async Task<int> DiagTokenPlanAsync(SecureCredentialStore store)
     Console.WriteLine("=== alibaba-tokenplan ===");
     var snapshot = await provider.GetSnapshotAsync();
     PrintSnapshot(snapshot);
+    return 0;
+}
+
+static async Task<int> DiagTokenPlanHtmlAsync(SecureCredentialStore store)
+{
+    // 临时诊断：直接拉一次控制台页面，检查 SEC_TOKEN 到底在不在返回的 HTML 里，以及页面是不是
+    // 真的处于登录态（是否包含登录后才有的特征）。绝不打印 Cookie/HTML 全文/任何 token 值本身，
+    // 只打印结构性诊断信息（长度、是否包含某关键字、关键字周围的字符类别统计）。
+    const string cookieKey = "alibaba:tokenplan:consoleCookie";
+    var cookie = store.TryReadLarge(cookieKey);
+    if (cookie is null)
+    {
+        Console.WriteLine("未配置。");
+        return 1;
+    }
+
+    using var httpClient = new HttpClient();
+    httpClient.Timeout = TimeSpan.FromSeconds(20);
+    using var request = new HttpRequestMessage(HttpMethod.Get, "https://bailian.console.aliyun.com/cn-beijing?tab=plan");
+    request.Headers.TryAddWithoutValidation("Cookie", cookie);
+    request.Headers.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+    request.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36 Edg/120.0");
+
+    var response = await httpClient.SendAsync(request);
+    var html = await response.Content.ReadAsStringAsync();
+
+    Console.WriteLine($"HTTP status: {(int)response.StatusCode}");
+    Console.WriteLine($"HTML length: {html.Length}");
+    Console.WriteLine($"Contains 'SEC_TOKEN': {html.Contains("SEC_TOKEN")}");
+    Console.WriteLine($"Contains 'CURRENT_PK': {html.Contains("CURRENT_PK")}");
+    Console.WriteLine($"Contains 'ALIYUN_CONSOLE_CONFIG': {html.Contains("ALIYUN_CONSOLE_CONFIG")}");
+    Console.WriteLine($"Contains 'passport.aliyun.com': {html.Contains("passport.aliyun.com")}");
+    Console.WriteLine($"Contains '暂不支持移动端': {html.Contains("暂不支持移动端")}");
+    Console.WriteLine($"Contains '请登录' or '登录后使用': {html.Contains("请登录") || html.Contains("登录后使用")}");
+    Console.WriteLine($"Contains 'window.location': {html.Contains("window.location")}");
+
+    // 不打印 SEC_TOKEN 附近的原始文本（可能截到真实 token 片段）；只报告结构性判断：
+    // 出现次数、以及是否匹配 Provider 里用的那个正则模式。
+    var occurrences = System.Text.RegularExpressions.Regex.Matches(html, "SEC_TOKEN").Count;
+    var regexMatches = System.Text.RegularExpressions.Regex.Matches(html, @"\bSEC_TOKEN\s*:\s*""([^""]+)""").Count;
+    Console.WriteLine($"'SEC_TOKEN' occurrence count: {occurrences}");
+    Console.WriteLine($"Provider regex (\\bSEC_TOKEN\\s*:\\s*\"...\") match count: {regexMatches}");
+
     return 0;
 }
 

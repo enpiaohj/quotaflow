@@ -178,16 +178,27 @@ public partial class AlibabaLoginWindow : Window
             return;
         }
 
-        // 顺带从页面 JS 里提取 SEC_TOKEN（供查询网关鉴权），取不到也不阻塞——Provider 会降级
-        // 到从控制台页面 HTML 正则提取。
+        // 顺带从页面 JS 里提取 SEC_TOKEN（供查询网关鉴权）。实测：控制台是纯前端 SPA
+        // （efm-fe 异步微前端），服务端渲染的 HTML 里永远不包含 SEC_TOKEN——它是页面 JS
+        // 执行后才动态注入的；"检测到已登录"（CURRENT_PK 出现）和"SEC_TOKEN 已注入"是两个
+        // 独立的异步时机，前者可能先于后者发生。这里退避重试几次，给 SPA 懒加载的业务模块
+        // 留出时间，而不是只试一次就放弃——只试一次曾经导致"明明登录成功却拿不到 SEC_TOKEN"。
         var secToken = string.Empty;
-        try
+        for (var attempt = 0; attempt < 6 && string.IsNullOrEmpty(secToken); attempt++)
         {
-            secToken = await TryExtractSecTokenAsync();
-        }
-        catch (Exception)
-        {
-            // 提取失败不影响登录完成。
+            if (attempt > 0)
+            {
+                await Task.Delay(500);
+            }
+
+            try
+            {
+                secToken = await TryExtractSecTokenAsync();
+            }
+            catch (Exception)
+            {
+                // 单次提取失败不影响后续重试；重试次数用尽后 secToken 仍为空，交给调用方处理。
+            }
         }
 
         LoginSucceeded?.Invoke(cookieString, secToken);

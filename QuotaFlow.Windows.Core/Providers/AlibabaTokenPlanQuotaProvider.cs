@@ -9,14 +9,20 @@ namespace QuotaFlow.Windows.Core.Providers;
 /// 阿里云百炼 Token Plan（个人版）额度查询 —— 最小可用测试版本。
 ///
 /// 背景：Token Plan 没有公开的用量查询 REST API，本实现走"控制台网关"（非公开接口，随时可能
-/// 变化），流程完全来自产品侧提供的研究资料：
-///   1. 携带 Console Cookie GET https://bailian.console.aliyun.com/cn-beijing?tab=plan，
-///      从返回 HTML 中用正则提取全局变量 SEC_TOKEN；
-///   2. 携带 Cookie + SEC_TOKEN POST https://bailian-cs.console.aliyun.com/data/api.json
+/// 变化）。查询只需要两样东西：Console Cookie（登录态）+ SEC_TOKEN（网关鉴权令牌）：
+///   1. Cookie 由 <see cref="Views.AlibabaLoginWindow"/>（WebView2 一键登录）在登录成功后
+///      自动抓取整份会话 Cookie 并交给 App 层存入 Windows 凭据管理器；
+///   2. SEC_TOKEN 优先也在登录成功那一刻由 WebView2 执行页面 JS 提取（同一个登录窗口负责）——
+///      实测这是唯一可靠的获取方式：百炼控制台是纯前端 SPA（efm-fe 异步微前端），SEC_TOKEN
+///      是页面 JS 运行后才动态注入的全局变量，<b>不会出现在任何一次 GET 请求拿到的服务端渲染
+///      HTML 里</b>，哪怕 Cookie 是完全有效的登录态。本类里的 <see cref="FetchSecTokenAsync"/>
+///      （从控制台页面 HTML 正则提取）只是登录时提取失败时的兜底路径，架构上注定拿不到值，
+///      失败时应引导用户重新走一次一键登录，而不是被误判成"登录已失效"；
+///   3. 携带 Cookie + SEC_TOKEN POST https://bailian-cs.console.aliyun.com/data/api.json
 ///      （action=BroadScopeAspnGateway / product=sfm_bailian /
 ///       api=zeldaHttp.apikeyMgr.%2Ftokenplan%2Fpersonal%2Fapi%2Fv2%2Fusage，
 ///      Content-Type: application/x-www-form-urlencoded，带 Origin/Referer/region）；
-///   3. 从返回 JSON 解析 per1WeekPercentage（= 7 天额度已使用比例，0.7913 → 79.13%）和
+///   4. 从返回 JSON 解析 per1WeekPercentage（= 7 天额度已使用比例，0.7913 → 79.13%）和
 ///      per1WeekResetTime（= 7 天额度重置时间，Unix 毫秒时间戳）。
 ///
 /// 安全约束（硬性）：Console Cookie 只经构造注入的 <c>cookieProvider</c> 委托取得（App 层从
@@ -193,11 +199,15 @@ public sealed class AlibabaTokenPlanQuotaProvider : IQuotaProvider
             var match = SecTokenPattern.Match(html);
             if (!match.Success || string.IsNullOrWhiteSpace(match.Groups[1].Value))
             {
-                // 实测：匿名/无效 Cookie 下控制台返回的是 SPA 外壳（efm-fe 微前端加载器），
-                // HTML 里没有 SEC_TOKEN——它由登录后的应用脚本动态注入。所以这个失败的根因
-                // 几乎总是"Cookie 无访问权限/未登录"，而不是页面结构变化，文案要优先引导用户。
-                return SecTokenResult.FromError(MakeSnapshot(ProviderState.AuthenticationExpired, ErrorCategory.AuthenticationExpired,
-                    "无法从百炼控制台页面提取 SEC_TOKEN（通常是 Console Cookie 无权限或未登录），请确认已登录百炼控制台后重新复制 Cookie"));
+                // 实测更正：即使是有效登录态的 Cookie，服务端渲染的 HTML 里也从不包含
+                // SEC_TOKEN——百炼控制台是纯前端 SPA（efm-fe 异步微前端），SEC_TOKEN 是页面
+                // JS 执行后才动态注入的，不会出现在这次 GET 拿到的静态 HTML 里。也就是说
+                // 这条"HTML 正则提取"路径本身在架构上就不可能取到 SEC_TOKEN——不是 Cookie
+                // 失效的信号，早期版本把它归类为 AuthenticationExpired 会误导用户去重新登录。
+                // 正确路径是登录时由 WebView2 执行 JS 提取（见 AlibabaLoginWindow），
+                // 这里只是它不可用时的兜底，理应引导用户重新走一次一键登录来刷新这个值。
+                return SecTokenResult.FromError(MakeSnapshot(ProviderState.ProviderError, ErrorCategory.ResponseFormat,
+                    "未能取得 SEC_TOKEN（该值只能在登录时由浏览器页面动态生成，无法从静态页面内容解析），请在设置页重新执行一次「一键登录」"));
             }
 
             return SecTokenResult.Ok(match.Groups[1].Value);
