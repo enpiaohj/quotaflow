@@ -1,11 +1,42 @@
-# QuotaFlow for Windows
+# QuotaFlow
 
-Windows 11 系统托盘应用：一眼看清 Claude / Codex / MiniMax / DeepSeek 四个平台还剩多少额度、何时重置、数据是否新鲜。不做聊天、模型切换、代理路由等其他功能。
+> Private Project · Windows 11 系统托盘 AI 额度监控
+
+## 产品简介
+
+一眼看清多个 AI 平台还剩多少额度、何时重置、数据是否新鲜。不做聊天、模型切换、
+代理路由等其他功能。常驻系统托盘，支持托盘弹出 / 悬浮窗口 / 桌面看板三种显示模式。
+
+## 核心功能
+
+- **内置平台**：Claude、Codex、MiniMax、DeepSeek、阿里云百炼 Token Plan（个人版）。
+- **自定义平台**：运行时添加任意额度接口，配置取值路径即可，无需改代码或发版。
+- **额度窗口**：按平台展示多个时间窗口的剩余/已用百分比与重置倒计时；余额型平台展示金额。
+- **跨设备迁移**：口令加密的备份包导出/导入（PBKDF2 + AES-256-GCM），导出前需身份验证。
+- **诊断报告**：一键生成已脱敏的运行状态报告，便于反馈问题。
+- **安全**：密钥只存 Windows 凭据管理器；配置 DPAPI 加密落盘；**绝不把未知数据显示成 0%**。
+
+## 当前版本
+
+`v0.10.2` — 版本号定义于 `QuotaFlow.Windows.App/QuotaFlow.Windows.App.csproj` 的 `<Version>`。
+
+仍处于 `0.x`：走向 1.0 的条件见 `docs/2026-09-01-QuotaFlow后续优化计划-v1.0.md`。
+
+## 系统要求
+
+- Windows 11（最低支持 Windows 10 1809 / 10.0.17763）
+- 发布产物为自包含单文件，**目标机器无需安装 .NET 运行时**
+- 阿里云百炼一键登录需要 WebView2 Runtime（Windows 11 已内置）
+
+## 开发环境
+
+- .NET SDK 8.0
+- 目标框架：Core `net8.0-windows` / App `net8.0-windows10.0.19041.0`（仅为调用 Windows Hello）
 
 ## 项目结构
 
 ```
-QuotaFlow.Windows/
+QuotaFlow/                         （仓库根 = 项目根）
 ├── QuotaFlow.Windows.sln
 ├── QuotaFlow.Windows.Core/        平台无关的业务逻辑（可单独跑单测，不依赖 WPF）
 │   ├── Models/                    ProviderSnapshot / QuotaWindow / BalanceMetric / 枚举
@@ -99,3 +130,14 @@ Claude / Codex / MiniMax 三个平台的接口路径、请求头和响应字段�
 3. **视觉效果是"手写 Fluent 风格"而非真正的 Mica/Acrylic 材质**：用圆角 + 阴影 + 浅色/深色双色板模拟 Windows 11 视觉语言，没有引入 WinUI3/WPF-UI 之类的库来获取系统级亚克力效果，符合"不为追新技术引入复杂架构"的要求，但视觉保真度不是像素级还原系统组件。v1.3.0 的显示模式功能里，"云母/亚克力"材质选项同样受此限制：面板窗口用 `WindowStyle="None" AllowsTransparency="True"` 实现圆角/阴影，这种逐像素 Alpha 分层窗口与 DWM 的系统级材质合成天然冲突，即使真实调用了 `DwmSetWindowAttribute` 也不会产生可见的系统材质效果，只能用不同色调的半透明背景色近似；悬浮窗口/桌面看板也暂时没有专门的悬停展开工具栏或进入/退出动画。
 4. **DPAPI 与当前 Windows 用户绑定**：`settings.json` 的加密密钥派生自当前 Windows 用户，换账号登录或系统重装后旧文件无法解密——应用会安全落回默认值并保留原文件（不覆盖、不报错），重新在设置页保存即可。配置文件本身不含任何密钥，可接受。
 5. **Claude/Codex 只识别对应 CLI 的登录，不识别桌面客户端**：Claude 只读取 Claude Code CLI 写的 `~/.claude/.credentials.json`；Codex 只读取 Codex CLI 写的 `~/.codex/auth.json` 且要求 `auth_mode == "chatgpt"`。**Claude Desktop / ChatGPT Desktop 客户端不会写这两个文件**，即使用桌面版登录了同一个账号，QuotaFlow 也检测不到——这是范围内的设计限制，不是 bug：CLI 工具的凭据文件是特意做成可被第三方程序读取的机读格式，桌面客户端的会话存储没有这层约定，贸然猜测/读取会既不可靠也超出"只读复用官方 CLI 已落地凭据"这条安全边界。**closing/退出 CLI 进程不影响检测**——凭据是登录时一次性写入磁盘的文件，QuotaFlow 直接读文件，不依赖 CLI 进程是否在运行；只有真正登出、或者凭据本身过期，才会导致检测不到。日常使用建议：只要曾经用对应 CLI 登录过一次（哪怕平时都用桌面版），文件就会一直留在磁盘上，无需让 CLI 保持运行。
+
+## Repository 规则
+
+本仓库的分支、提交、版本、发布、安全与备份规则见 [`CLAUDE.md`](CLAUDE.md)。要点：
+
+- 一个产品一个仓库；本仓库只放 QuotaFlow。
+- 默认分支 `main`，**禁止强制推送**。
+- Commit 遵循 Conventional Commits，发布提交为 `release: QuotaFlow vX.Y.Z`。
+- Tag 格式 `vX.Y.Z`。
+- 构建产物进 GitHub Releases，不进 Git 历史。
+- 密钥、Token、Cookie、`.env`、`*.qfbackup` 一律不得提交。

@@ -1,10 +1,20 @@
 # Changelog
 
-版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)（`主版本.次版本.修订号`），每次发布打对应的 Git tag。自 v0.9.2 起本项目并入 `ai-coding-workspace` 仓库，标签带项目前缀（`quotaflow/vX.Y.Z`）——Git 标签是仓库全局的，不区分目录，多个项目共用一个仓库时必须加前缀避免版本号冲突。
+版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)（`主版本.次版本.修订号`），每次发布打对应的 Git tag。标签格式 `vX.Y.Z`。（v0.9.2～v0.10.2 期间本项目曾短暂并入 `ai-coding-workspace` 仓库、标签带 `quotaflow/` 前缀；2026-09-01 拆分为独立仓库 `enpiaohj/quotaflow` 后，标签已统一恢复为 `vX.Y.Z`，仓库名本身已表达产品，无需重复。）
 
 > **版本号说明**：`v1.0.0`～`v1.4.9` 是早期未足够谨慎标注的历史版本（已发布 Git tag，按规则
 > 保留不动）。从 `v0.5.0` 起改用 `0.x.y`——阿里云百炼 Token Plan 这个 Provider 仍处于快速试错
 > 阶段，`0.x` 更准确地反映"尚未达到可对外承诺稳定性"的真实状态，待其稳定后再规划重新回到 `1.x`。
+
+## [Unreleased]
+
+### Added
+
+### Changed
+
+### Fixed
+
+### Removed
 
 ## [0.10.2] - 2026-09-01
 
