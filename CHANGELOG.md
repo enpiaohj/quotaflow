@@ -2,6 +2,32 @@
 
 版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)（`主版本.次版本.修订号`），每次发布打对应的 Git tag（`vX.Y.Z`）。
 
+## [1.4.5] - 2026-09-01
+
+### 新增
+
+- **阿里云百炼 Token Plan（个人版）额度查询（测试版）**：新增 "Alibaba Token Plan" 平台，查询 Token Plan
+  个人版 7 天额度使用率与重置时间。由于 Token Plan 没有公开的用量 REST 接口，走控制台网关
+  （非公开接口，可能随时变化）：
+  1. 携带 Console Cookie 拉取百炼控制台页面，提取 `SEC_TOKEN`；
+  2. POST 控制台网关 `zeldaHttp.apikeyMgr./tokenplan/personal/api/v2/usage`，解析
+     `per1WeekPercentage`（7 天已用比例）与 `per1WeekResetTime`（重置时间，Unix 毫秒）；
+  3. 面板卡片显示「7 天已用 / 7 天剩余」两个窗口与重置倒计时，复用现有卡片模板。
+- **WebView2 一键登录（替代手工填 Cookie）**：引入 `Microsoft.Web.WebView2`，设置页「一键登录」
+  在内置浏览器中登录阿里云百炼，登录成功后自动抓取登录态（Console Cookie）存入 Windows
+  凭据管理器，并自动触发额度查询——用户不需要手工复制粘贴任何内容。登录态失效后卡片显示
+  「需要重新登录」，回到设置页一键重新登录即可。
+
+### 说明
+
+- 新增的第三方依赖 `Microsoft.Web.WebView2`：这是实现"免手工 Cookie 的一键登录"的必要组件，
+  Windows 11 通常自带其 Evergreen 运行时（与 Microsoft Edge 同源）。
+- Console Cookie / `SEC_TOKEN` 只经 Windows 凭据管理器存取，不落盘、不写日志、不进异常消息；
+  日志（`[AlibabaTokenPlan] ...`）只含查询步骤与百分比/时间等非敏感信息。
+- **已知限制**：Token Plan 用量走的是未公开的控制台网关，字段/端点可能随官方调整；
+  WebView2 一键登录的真实账号端到端验证（登录→抓登录态→查询出额度）尚未完成，等待真实账号
+  登录验证后再更新说明。
+
 ## [1.4.4] - 2026-08-31
 
 ### 改进
