@@ -29,6 +29,64 @@ public partial class SettingsWindow : Window
         // 不然用户点了"+ 添加自定义平台"却看不到任何变化，会误以为没生效。
         viewModel.CustomPlatformRows.CollectionChanged += OnCustomPlatformRowsChanged;
         Closed += (_, _) => viewModel.CustomPlatformRows.CollectionChanged -= OnCustomPlatformRowsChanged;
+
+        Closing += OnClosingConfirmUnsaved;
+        PreviewKeyDown += OnPreviewKeyDownCloseOnEscape;
+    }
+
+    /// <summary>
+    /// Esc 关闭设置窗口，与主面板的行为保持一致。走 <see cref="Window.Close"/> 而不是直接
+    /// 隐藏，好让下面的未保存确认照常生效。
+    /// </summary>
+    private void OnPreviewKeyDownCloseOnEscape(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape)
+        {
+            return;
+        }
+
+        // 快捷键捕获框正在等用户按组合键时，Esc 属于它的输入，不能拿去关窗。
+        if (Equals(Keyboard.FocusedElement, HotkeyCaptureBox))
+        {
+            return;
+        }
+
+        e.Handled = true;
+        Close();
+    }
+
+    /// <summary>
+    /// 关窗前挽留：本页是"编辑草稿 + 点保存"模式，直接关掉会静默丢弃改动。
+    /// 「显示与窗口」那一页是即时生效的，不参与这里的比对（它的值本来就已经在磁盘上了）。
+    /// </summary>
+    private void OnClosingConfirmUnsaved(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        if (!ViewModel.HasUnsavedChanges)
+        {
+            return;
+        }
+
+        // 显式限定命名空间：项目同时引用了 WinForms（只为托盘 NotifyIcon），
+        // MessageBox / KeyEventArgs 这些名字在两个命名空间里都有。
+        var choice = System.Windows.MessageBox.Show(
+            this,
+            "有尚未保存的设置改动，要保存吗？",
+            "QuotaFlow 设置",
+            MessageBoxButton.YesNoCancel,
+            MessageBoxImage.Question,
+            MessageBoxResult.Yes);
+
+        switch (choice)
+        {
+            case MessageBoxResult.Yes:
+                ViewModel.SavePendingChanges();
+                break;
+            case MessageBoxResult.Cancel:
+                e.Cancel = true; // 留在设置页继续编辑
+                break;
+            default:
+                break; // No = 放弃改动，直接关闭
+        }
     }
 
     private void OnCustomPlatformRowsChanged(object? sender, NotifyCollectionChangedEventArgs e)

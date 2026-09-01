@@ -404,6 +404,23 @@ public sealed class AppSettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public void SaveThenLoad_RoundTripsHiddenPlatforms()
+    {
+        _store.Save(new AppSettings { HiddenPlatforms = ["minimax", "alibaba-tokenplan"] });
+
+        Assert.Equal(["minimax", "alibaba-tokenplan"], _store.Load().HiddenPlatforms);
+    }
+
+    [Fact]
+    public void Load_MissingHiddenPlatforms_DefaultsToNullMeaningAllVisible()
+    {
+        // 老配置文件里没有这个字段，必须表示"全部显示"，绝不能反过来把所有平台都藏掉。
+        _store.Save(new AppSettings());
+
+        Assert.Null(_store.Load().HiddenPlatforms);
+    }
+
+    [Fact]
     public void SaveThenLoad_RoundTripsWindowDisplaySettings()
     {
         var original = new AppSettings

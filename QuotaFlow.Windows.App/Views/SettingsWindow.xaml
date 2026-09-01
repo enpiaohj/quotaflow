@@ -316,11 +316,16 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Claude" FontSize="13" FontWeight="SemiBold"
                                        VerticalAlignment="Center"
                                        Foreground="{DynamicResource Brush.TextPrimary}" />
-                            <TextBlock Grid.Column="1" Text="{Binding ClaudeLoginStatusText}" FontSize="12"
+                            <CheckBox Grid.Column="1" Content="显示" Margin="0,0,14,0" VerticalAlignment="Center"
+                                      AutomationProperties.AutomationId="ShowClaudeOnPanelCheckBox"
+                                      ToolTip="取消勾选后该平台不在面板上显示（配置和数据都保留）"
+                                      IsChecked="{Binding ShowClaudeOnPanel}" />
+                            <TextBlock Grid.Column="2" Text="{Binding ClaudeLoginStatusText}" FontSize="12"
                                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                        Foreground="{DynamicResource Brush.TextSecondary}" />
                         </Grid>
@@ -354,11 +359,16 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Codex" FontSize="13" FontWeight="SemiBold"
                                        VerticalAlignment="Center"
                                        Foreground="{DynamicResource Brush.TextPrimary}" />
-                            <TextBlock Grid.Column="1" Text="{Binding CodexLoginStatusText}" FontSize="12"
+                            <CheckBox Grid.Column="1" Content="显示" Margin="0,0,14,0" VerticalAlignment="Center"
+                                      AutomationProperties.AutomationId="ShowCodexOnPanelCheckBox"
+                                      ToolTip="取消勾选后该平台不在面板上显示（配置和数据都保留）"
+                                      IsChecked="{Binding ShowCodexOnPanel}" />
+                            <TextBlock Grid.Column="2" Text="{Binding CodexLoginStatusText}" FontSize="12"
                                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                        Foreground="{DynamicResource Brush.TextSecondary}" />
                         </Grid>
@@ -392,11 +402,16 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="MiniMax" FontSize="13" FontWeight="SemiBold"
                                        VerticalAlignment="Center"
                                        Foreground="{DynamicResource Brush.TextPrimary}" />
-                            <TextBlock Grid.Column="1" Text="{Binding MiniMaxConfiguredText}" FontSize="12"
+                            <CheckBox Grid.Column="1" Content="显示" Margin="0,0,14,0" VerticalAlignment="Center"
+                                      AutomationProperties.AutomationId="ShowMiniMaxOnPanelCheckBox"
+                                      ToolTip="取消勾选后该平台不在面板上显示（配置和数据都保留）"
+                                      IsChecked="{Binding ShowMiniMaxOnPanel}" />
+                            <TextBlock Grid.Column="2" Text="{Binding MiniMaxConfiguredText}" FontSize="12"
                                        VerticalAlignment="Center"
                                        Foreground="{DynamicResource Brush.TextSecondary}" />
                         </Grid>
@@ -452,11 +467,16 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="DeepSeek" FontSize="13" FontWeight="SemiBold"
                                        VerticalAlignment="Center"
                                        Foreground="{DynamicResource Brush.TextPrimary}" />
-                            <TextBlock Grid.Column="1" Text="{Binding DeepSeekConfiguredText}" FontSize="12"
+                            <CheckBox Grid.Column="1" Content="显示" Margin="0,0,14,0" VerticalAlignment="Center"
+                                      AutomationProperties.AutomationId="ShowDeepSeekOnPanelCheckBox"
+                                      ToolTip="取消勾选后该平台不在面板上显示（配置和数据都保留）"
+                                      IsChecked="{Binding ShowDeepSeekOnPanel}" />
+                            <TextBlock Grid.Column="2" Text="{Binding DeepSeekConfiguredText}" FontSize="12"
                                        VerticalAlignment="Center"
                                        Foreground="{DynamicResource Brush.TextSecondary}" />
                         </Grid>
@@ -504,11 +524,16 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="阿里云百炼 Token Plan" FontSize="13" FontWeight="SemiBold"
                                        VerticalAlignment="Center"
                                        Foreground="{DynamicResource Brush.TextPrimary}" />
-                            <TextBlock Grid.Column="1" FontSize="12" VerticalAlignment="Center"
+                            <CheckBox Grid.Column="1" Content="显示" Margin="0,0,14,0" VerticalAlignment="Center"
+                                      AutomationProperties.AutomationId="ShowTokenPlanOnPanelCheckBox"
+                                      ToolTip="取消勾选后该平台不在面板上显示（配置和数据都保留）"
+                                      IsChecked="{Binding ShowTokenPlanOnPanel}" />
+                            <TextBlock Grid.Column="2" FontSize="12" VerticalAlignment="Center"
                                        Foreground="{DynamicResource Brush.TextSecondary}">
                                 <Run Text="{Binding TokenPlanConfiguredText, Mode=OneWay}" />
                                 <Run Text=" · cn-beijing" FontFamily="Consolas" />

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -107,6 +108,59 @@ public sealed partial class SettingsViewModel : ObservableObject
 
         HotkeyModifiers = modifiers;
         HotkeyKey = keyName;
+    }
+
+    // ---- 平台是否在面板显示 ----
+    // "未配置自动隐藏"由 Provider 状态决定，不需要用户操心；这里是另一回事：平台配好了、
+    // 但用户平时不想看。走普通的"编辑草稿 + 点保存"路径（不即时生效），与同一页其它平台
+    // 配置项保持一致。
+
+    [ObservableProperty] private bool _showClaudeOnPanel = true;
+    [ObservableProperty] private bool _showCodexOnPanel = true;
+    [ObservableProperty] private bool _showMiniMaxOnPanel = true;
+    [ObservableProperty] private bool _showDeepSeekOnPanel = true;
+    [ObservableProperty] private bool _showTokenPlanOnPanel = true;
+
+    /// <summary>
+    /// 本页是否有尚未保存的改动。
+    ///
+    /// 实现方式是"把当前编辑态构造成设置对象，与磁盘上的设置逐字段比对"，而不是给每个属性
+    /// 挂脏标记——后者需要在每处新增属性时都记得加埋点，漏一个就会静默失效；比对法则天然
+    /// 覆盖本页所有字段，将来加了新设置项也不会漏。
+    ///
+    /// 比对用 JSON 序列化：AppSettings 是纯数据对象没有值相等语义，而设置存储本来就以 JSON
+    /// 形式落盘，序列化结果相同即意味着这次保存不会改变磁盘内容。
+    /// </summary>
+    public bool HasUnsavedChanges
+    {
+        get
+        {
+            try
+            {
+                var pending = BuildSettingsSnapshot().Settings;
+                var onDisk = _settingsStore.Load();
+                return JsonSerializer.Serialize(pending) != JsonSerializer.Serialize(onDisk);
+            }
+            catch (Exception)
+            {
+                // 判断不出来时一律当作"没有改动"：这个属性只用于关窗前的挽留提示，
+                // 宁可漏提示，也不能因为它自身出错就把设置窗口卡住关不掉。
+                return false;
+            }
+        }
+    }
+
+    /// <summary>关窗前挽留提示选"保存"时调用，等价于点一次「保存设置」。</summary>
+    public void SavePendingChanges() => SaveGeneralSettings();
+
+    /// <summary>内置平台的 ProviderId → "是否显示"取值器，保存时据此拼 HiddenPlatforms。</summary>
+    private IEnumerable<(string ProviderId, bool Show)> BuiltInPanelVisibility()
+    {
+        yield return ("claude", ShowClaudeOnPanel);
+        yield return ("codex", ShowCodexOnPanel);
+        yield return ("minimax", ShowMiniMaxOnPanel);
+        yield return ("deepseek", ShowDeepSeekOnPanel);
+        yield return ("alibaba-tokenplan", ShowTokenPlanOnPanel);
     }
 
     /// <summary>设置页"自定义平台"的可编辑行：新增/编辑的定义在保存前也驻留于此。</summary>
@@ -364,6 +418,14 @@ public sealed partial class SettingsViewModel : ObservableObject
         _codexEndpointOverride = current.CodexEndpointOverride ?? string.Empty;
         _miniMaxEndpointOverride = current.MiniMaxEndpointOverride ?? string.Empty;
         _deepSeekEndpointOverride = current.DeepSeekEndpointOverride ?? string.Empty;
+
+        // 隐藏名单里没有的平台就是显示（默认全部显示）。用 ?? [] 兜底手改配置写成 null 的情况。
+        var hidden = new HashSet<string>(current.HiddenPlatforms ?? [], StringComparer.OrdinalIgnoreCase);
+        _showClaudeOnPanel = !hidden.Contains("claude");
+        _showCodexOnPanel = !hidden.Contains("codex");
+        _showMiniMaxOnPanel = !hidden.Contains("minimax");
+        _showDeepSeekOnPanel = !hidden.Contains("deepseek");
+        _showTokenPlanOnPanel = !hidden.Contains("alibaba-tokenplan");
         _hotkeyEnabled = current.HotkeyEnabled;
         _hotkeyModifiers = current.HotkeyModifiers;
         _hotkeyKey = current.HotkeyKey;
@@ -773,6 +835,13 @@ public sealed partial class SettingsViewModel : ObservableObject
         settings.MiniMaxEndpointOverride = ToNullIfEmpty(MiniMaxEndpointOverride);
         settings.DeepSeekEndpointOverride = ToNullIfEmpty(DeepSeekEndpointOverride);
         settings.CustomPlatforms = customPlatforms;
+        // 只记"被隐藏的"，不记"显示的"：将来新增内置平台时，老配置里自然不会出现它的 id，
+        // 默认就是显示，不需要迁移。
+        var hiddenPlatforms = BuiltInPanelVisibility()
+            .Where(p => !p.Show)
+            .Select(p => p.ProviderId)
+            .ToArray();
+        settings.HiddenPlatforms = hiddenPlatforms.Length > 0 ? hiddenPlatforms : null;
         settings.HotkeyEnabled = HotkeyEnabled;
         settings.HotkeyModifiers = HotkeyModifiers;
         settings.HotkeyKey = HotkeyKey;

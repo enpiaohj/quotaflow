@@ -116,6 +116,15 @@ public sealed class AppSettings
     public string[]? PlatformOrder { get; set; }
 
     /// <summary>
+    /// 用户在设置页手动隐藏、不希望出现在面板上的平台（ProviderId 列表）。
+    ///
+    /// 与"未配置自动隐藏"是两回事：未配置是没有数据可展示，由 Provider 状态决定；这里是
+    /// 用户明确表示"这个平台我配了、但平时不想看"。纯新增字段（默认空），读取方一律
+    /// <c>?? []</c> 兜底，防手改配置出现 <c>hiddenPlatforms: null</c>。
+    /// </summary>
+    public string[]? HiddenPlatforms { get; set; }
+
+    /// <summary>
     /// 用户在设置页手动添加的自定义平台定义列表。纯新增字段（默认空列表），不 bump schemaVersion；
     /// 读取方一律用 <c>?? []</c> 兜底，防手改配置出现 <c>customPlatforms: null</c>。
     /// </summary>

@@ -43,10 +43,35 @@ public sealed partial class ProviderCardViewModel : ObservableObject
     public string? DataSource => _lastSnapshot?.DataSource;
 
     /// <summary>
+    /// 用户在设置页把这个平台标成了"不在面板显示"。与 <see cref="ProviderState.NotConfigured"/>
+    /// 的自动隐藏是两回事：那个是没有数据可展示，这个是用户配了但平时不想看。
+    /// </summary>
+    public bool IsHiddenByUser
+    {
+        get => _isHiddenByUser;
+        set
+        {
+            if (_isHiddenByUser == value)
+            {
+                return;
+            }
+
+            _isHiddenByUser = value;
+            OnPropertyChanged(nameof(IsHiddenByUser));
+            OnPropertyChanged(nameof(Visibility));
+        }
+    }
+
+    private bool _isHiddenByUser;
+
+    /// <summary>
     /// 未配置（NotConfigured）的平台在面板上隐藏——没有数据可展示就不占空间，也避免误读成"0%/0.00"。
     /// 其它状态（网络异常、需要重新登录等）仍然显示，让用户知道该平台出问题了。
+    /// 用户在设置页显式隐藏的平台同样不显示。
     /// </summary>
-    public Visibility Visibility => State == ProviderState.NotConfigured ? Visibility.Collapsed : Visibility.Visible;
+    public Visibility Visibility => State == ProviderState.NotConfigured || IsHiddenByUser
+        ? Visibility.Collapsed
+        : Visibility.Visible;
 
     /// <summary>
     /// 是否有额度窗口要显示。v1.1.0 起与 <see cref="HasBalance"/> 不再互斥——一个自定义平台

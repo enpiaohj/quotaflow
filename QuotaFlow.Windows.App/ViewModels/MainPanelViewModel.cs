@@ -175,6 +175,7 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
             Cards.Add(CreateCard(id));
         }
 
+        ApplyHiddenPlatforms(_settings.HiddenPlatforms);
         ApplyPlatformOrder(_settings.PlatformOrder);
 
         _tickTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -245,6 +246,7 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
         _settings = settings;
         _coordinator.Rebuild(_providerFactory(settings));
         ReconcileCards();
+        ApplyHiddenPlatforms(settings.HiddenPlatforms);
         ApplyPlatformOrder(settings.PlatformOrder);
         ApplyAutoRefreshInterval(settings.AutoRefreshIntervalMinutes);
 
@@ -350,6 +352,22 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
     /// 未出现的保持自然顺序排在末尾；null/空表示全部用自然顺序。只重排不改状态，
     /// 卡片实例及其缓存/刷新状态都不受影响。
     /// </summary>
+    /// <summary>
+    /// 把设置里"用户手动隐藏的平台"应用到卡片上。隐藏只影响可见性，卡片实例、缓存和刷新
+    /// 状态都保留——重新勾选显示时不需要等下一轮刷新就能看到上次的数据。
+    /// </summary>
+    private void ApplyHiddenPlatforms(string[]? hidden)
+    {
+        var hiddenSet = hidden is { Length: > 0 }
+            ? new HashSet<string>(hidden, StringComparer.OrdinalIgnoreCase)
+            : null;
+
+        foreach (var card in Cards)
+        {
+            card.IsHiddenByUser = hiddenSet?.Contains(card.ProviderId) == true;
+        }
+    }
+
     private void ApplyPlatformOrder(string[]? order)
     {
         if (order is { Length: > 0 })
@@ -417,8 +435,10 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
             ? FormatRelative(now - refreshedAt)
             : string.Empty;
 
-        // 全部未配置时显示友好引导文案（面板为空的状态，而非假装有数据）。
-        EmptyStateVisibility = Cards.Any(c => c.State != ProviderState.NotConfigured)
+        // 一张卡片都看不见时显示友好引导文案（面板为空的状态，而非假装有数据）。
+        // 判据用 Visibility 而不是只看 NotConfigured：用户可能把已配置的平台都手动隐藏了，
+        // 那种情况下面板同样是空的，不该留一片纯空白让人以为是加载失败。
+        EmptyStateVisibility = Cards.Any(c => c.Visibility == Visibility.Visible)
             ? Visibility.Collapsed
             : Visibility.Visible;
 

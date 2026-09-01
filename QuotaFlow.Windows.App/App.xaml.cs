@@ -360,8 +360,20 @@ public partial class App : Application
         {
             var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "QuotaFlow");
             Directory.CreateDirectory(dir);
+            var path = Path.Combine(dir, "crash.log");
+
+            // 单文件轮转：超过上限就把当前文件改名成 .1（覆盖上一份），重新从空文件开始写。
+            // 这样最多占用 2×上限，且最近一段历史仍然留得住——反复触发同一个异常时不会把
+            // 磁盘慢慢写满，也不至于为了限制体积把刚发生的现场直接丢掉。
+            const long maxBytes = 1024 * 1024;
+            var info = new FileInfo(path);
+            if (info.Exists && info.Length > maxBytes)
+            {
+                File.Move(path, path + ".1", overwrite: true);
+            }
+
             var line = $"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}] {ex.GetType().FullName}: {ex.Message}\n{ex.StackTrace}\n\n";
-            File.AppendAllText(Path.Combine(dir, "crash.log"), line);
+            File.AppendAllText(path, line);
         }
         catch
         {
