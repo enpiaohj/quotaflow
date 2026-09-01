@@ -1,10 +1,53 @@
 # Changelog
 
-版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)（`主版本.次版本.修订号`），每次发布打对应的 Git tag（`vX.Y.Z`）。
+版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)（`主版本.次版本.修订号`），每次发布打对应的 Git tag。自 v0.9.2 起本项目并入 `ai-coding-workspace` 仓库，标签带项目前缀（`quotaflow/vX.Y.Z`）——Git 标签是仓库全局的，不区分目录，多个项目共用一个仓库时必须加前缀避免版本号冲突。
 
 > **版本号说明**：`v1.0.0`～`v1.4.9` 是早期未足够谨慎标注的历史版本（已发布 Git tag，按规则
 > 保留不动）。从 `v0.5.0` 起改用 `0.x.y`——阿里云百炼 Token Plan 这个 Provider 仍处于快速试错
 > 阶段，`0.x` 更准确地反映"尚未达到可对外承诺稳定性"的真实状态，待其稳定后再规划重新回到 `1.x`。
+
+## [0.9.2] - 2026-09-01
+
+### Fixed
+
+**窗口显示设置静默丢失——界面生效、磁盘未写、重启全部回退，且没有任何提示。**
+
+实测复现：在设置页勾选「紧凑布局」或切换「始终置顶」，界面立刻变化，
+重启后回到旧值。直接解密读取磁盘上的设置文件确认：改动从未落盘。
+
+根因是三层叠加：
+
+| 层 | 问题 |
+| --- | --- |
+| 1 | WPF 的 `Window.Width/Height` 在窗口尚未显式设定尺寸时是 `NaN`，`CaptureCurrentPlacement` 直接读取，把 `NaN` 写进了窗口位置 |
+| 2 | `System.Text.Json` 序列化非有限值抛 `ArgumentException` |
+| 3 | `AppSettingsStore.SaveCore` 静默吞掉该异常 |
+
+第 3 层是关键：写失败降级本身有必要（它曾把启动流程带崩、连托盘图标都来不及创建），
+但完全不留痕迹就变成了静默数据丢失，也违反项目规则「不隐藏 Error」。
+
+- 新增 `Core/Services/PlacementValidation`：位置的每个数值必须有限、尺寸与 DPI 必须为正；
+  持久化前剔除不合格的位置与非有限不透明度。一个坏掉的位置不该把整份设置的持久化拖垮。
+- `AppSettingsStore.Save` / `Update` 返回是否成功，新增 `OnSaveFailed` 回调，
+  由组合根写入 `crash.log`。降级保留，但不再无声。
+- `LogCrash` 记录 `InnerException` 链——包装异常本身说明不了根因，本次正是靠内层的
+  `ArgumentException` 才定位到问题。
+
+### Changed
+
+- 设置保存规则下沉到 Core（`SettingsPageEdits` + `SettingsSnapshotBuilder` +
+  `CustomPlatformValidator`），App 层只负责收集界面值。测试工程只引用 Core，
+  下沉后这些规则才第一次获得单元测试覆盖。
+- 新增 `AppSettingsStore.Update` 作为统一的「读-改-写」入口；面板的卡片顺序与
+  显示语义改用它，与其它写盘路径保持一致，避免拿陈旧快照整份覆盖。
+
+### Verification
+
+- Build：`dotnet build -c Release` —— 0 错误 0 警告
+- Tests：309 / 309 通过（新增 24 个）
+- 关键回归测试用反射逐字段校验「设置页不拥有的字段必须原样保留」，
+  并**故意重新注入原缺陷验证过它确实会失败**，确认不是摆设
+- 端到端：修复前勾选紧凑布局后立即读磁盘仍为 `False`，修复后变为 `True`
 
 ## [0.9.1] - 2026-09-01
 
