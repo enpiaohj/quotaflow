@@ -40,6 +40,7 @@ public partial class AlibabaLoginWindow : Window
     private bool _loginSucceeded;
     private bool _closedByUser;
     private bool _webViewReady;
+    private bool _navigated;
 
     /// <summary>登录成功事件：携带抓取到的完整 Cookie 字符串（仅内存传递）。</summary>
     public event Action<string>? LoginSucceeded;
@@ -70,8 +71,13 @@ public partial class AlibabaLoginWindow : Window
             _webViewReady = true;
 
             LoadingHint.Text = "正在加载阿里云百炼控制台…";
-            LoginWebView.CoreWebView2.Navigate(ConsoleUrl);
             _detectTimer.Start();
+
+            // 关键时序：不能在窗口还没完成布局时就 Navigate——WebView2 会用当时的极小初始尺寸
+            // 渲染内容，实测百炼控制台据此判定为"移动端视口"而显示"暂不支持移动端体验"（内宽只有
+            // 167px）。等到控件拿到真实宽度（>400px）后再导航，页面才会以桌面视口加载。
+            LoginWebView.SizeChanged += OnLoginWebViewSizeChanged;
+            TryNavigateWhenSized();
         }
         catch (Exception)
         {
@@ -99,6 +105,27 @@ public partial class AlibabaLoginWindow : Window
         var folder = Path.Combine(localAppData, "QuotaFlow", "WebView2");
         Directory.CreateDirectory(folder);
         return folder;
+    }
+
+    /// <summary>等到 WebView2 控件拿到真实宽度后再执行一次导航（仅一次），避免以极小的预布局
+    /// 尺寸渲染页面、被百炼控制台误判成移动端视口。</summary>
+    private void OnLoginWebViewSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (e.NewSize.Width > 400)
+        {
+            TryNavigateWhenSized();
+        }
+    }
+
+    private void TryNavigateWhenSized()
+    {
+        if (_navigated || !_webViewReady || LoginWebView.ActualWidth <= 400)
+        {
+            return;
+        }
+
+        _navigated = true;
+        LoginWebView.CoreWebView2.Navigate(ConsoleUrl);
     }
 
     private async Task OnDetectTickAsync()

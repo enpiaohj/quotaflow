@@ -13,14 +13,9 @@
                        FontSize="12" Foreground="{DynamicResource Brush.TextSecondary}" TextWrapping="Wrap" />
         </Border>
 
-        <!-- 登录 WebView：登录态（Cookie）由本窗口在登录成功后自动抓取并安全保存 -->
-        <Grid>
-            <wv2:WebView2 x:Name="LoginWebView" />
-            <TextBlock x:Name="LoadingHint" Text="正在加载阿里云百炼控制台…"
-                       HorizontalAlignment="Center" VerticalAlignment="Center"
-                       FontSize="13" Foreground="{DynamicResource Brush.TextTertiary}" />
-        </Grid>
-
+        <!-- 底部取消条：注意必须放在 Grid 之前——DockPanel 里只有最后一个子元素才填充剩余空间，
+             如果 Grid 不是最后一个，它会被默认按 Dock.Left 只给内容宽度（实测 WebView2 只有 166px，
+             百炼控制台据此判定"移动端视口"而拒绝显示桌面版）。 -->
         <Border DockPanel.Dock="Bottom" Background="{DynamicResource Brush.Background}"
                 BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="0,1,0,0" Padding="12,8">
             <StackPanel Orientation="Horizontal">
@@ -28,5 +23,13 @@
                         Click="OnCancelClick" />
             </StackPanel>
         </Border>
+
+        <!-- 登录 WebView：作为 DockPanel 最后一个子元素填充剩余空间，确保以桌面宽度渲染 -->
+        <Grid>
+            <wv2:WebView2 x:Name="LoginWebView" />
+            <TextBlock x:Name="LoadingHint" Text="正在加载阿里云百炼控制台…"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       FontSize="13" Foreground="{DynamicResource Brush.TextTertiary}" />
+        </Grid>
     </DockPanel>
 </Window>
