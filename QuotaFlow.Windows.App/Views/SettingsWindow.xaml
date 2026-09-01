@@ -959,12 +959,18 @@
                         <Button Content="打开配置目录" Style="{StaticResource Style.SecondaryButton}" Margin="0,0,8,0"
                                 AutomationProperties.AutomationId="OpenDataDirectoryButton"
                                 Command="{Binding OpenDataDirectoryCommand}" />
-                        <Button Content="清除本地缓存" Style="{StaticResource Style.SecondaryButton}"
+                        <Button Content="清除本地缓存" Style="{StaticResource Style.SecondaryButton}" Margin="0,0,8,0"
                                 AutomationProperties.AutomationId="ClearCacheButton"
                                 Command="{Binding ClearCacheCommand}" />
+                        <Button Content="生成诊断报告" Style="{StaticResource Style.SecondaryButton}"
+                                AutomationProperties.AutomationId="GenerateDiagnosticReportButton"
+                                ToolTip="生成一份已脱敏的运行状态报告，便于反馈问题"
+                                Command="{Binding GenerateDiagnosticReportCommand}" />
                     </StackPanel>
                     <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
                                Text="密钥保存在 Windows 凭据管理器中，不会写入普通配置文件、日志或缓存。Claude/Codex 的登录状态直接读取对应 CLI 本机凭据文件，QuotaFlow 不存储、也不上传这些凭据。" />
+                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
+                               Text="「生成诊断报告」输出应用版本、代理配置、各平台状态与最近异常类型，用于反馈问题。报告已脱敏：不含密钥、登录态与任何额度数值，可直接发送。" />
                 </StackPanel>
             </Border>
 

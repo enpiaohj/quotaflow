@@ -45,6 +45,12 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// </summary>
     private readonly Func<AppSettings, bool> _applyHotkeySettings;
 
+    /// <summary>
+    /// 采集诊断报告所需的运行时信息，由组合根注入（它才同时看得到版本、代理、面板状态与日志）。
+    /// 未注入时"生成诊断报告"按钮直接提示不可用，而不是产出一份缺东少西的报告。
+    /// </summary>
+    private readonly Func<DiagnosticInput>? _collectDiagnostics;
+
     [ObservableProperty] private int _autoRefreshIntervalMinutes;
     [ObservableProperty] private bool _refreshOnStartup;
     [ObservableProperty] private bool _startWithWindows;
@@ -399,6 +405,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     public IRelayCommand ClearTokenPlanCookieCommand { get; }
     public IRelayCommand ClearCacheCommand { get; }
     public IRelayCommand OpenDataDirectoryCommand { get; }
+    public IRelayCommand GenerateDiagnosticReportCommand { get; }
     public IAsyncRelayCommand ExportBackupCommand { get; }
     public IRelayCommand ImportBackupCommand { get; }
     public IRelayCommand RefreshLoginStatusCommand { get; }
@@ -409,6 +416,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     public SettingsViewModel(AppSettingsStore settingsStore, SecureCredentialStore credentialStore, LocalCache cache,
         AppSettings current, IWindowPresentationCoordinator presentation,
         Func<string, Task<IdentityVerificationResult>>? verifyIdentity = null,
+        Func<DiagnosticInput>? collectDiagnostics = null,
         Func<AppSettings, bool>? applyHotkeySettings = null)
     {
         _settingsStore = settingsStore;
@@ -416,6 +424,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _cache = cache;
         _presentation = presentation;
         _verifyIdentity = verifyIdentity ?? IdentityVerifier.VerifyAsync;
+        _collectDiagnostics = collectDiagnostics;
         _applyHotkeySettings = applyHotkeySettings ?? (_ => true);
 
         // 面板顶部模式切换按钮、或另一个已打开的设置窗口（理论上不会同时开两个，防御性处理）
@@ -468,6 +477,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         ClearTokenPlanCookieCommand = new RelayCommand(ClearTokenPlanCookie);
         ClearCacheCommand = new RelayCommand(ClearCache);
         OpenDataDirectoryCommand = new RelayCommand(OpenDataDirectory);
+        GenerateDiagnosticReportCommand = new RelayCommand(GenerateDiagnosticReport);
         ExportBackupCommand = new AsyncRelayCommand(ExportBackupAsync);
         ImportBackupCommand = new RelayCommand(ImportBackup);
         RefreshLoginStatusCommand = new RelayCommand(RefreshLoginStatus);
@@ -762,6 +772,47 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         _cache.Clear();
         StatusMessage = "已清除本地缓存";
+    }
+
+
+    /// <summary>
+    /// 生成一份可直接发给开发者的诊断报告。
+    ///
+    /// 起因：本项目排查问题时反复要临时搭诊断设施（网络代理写 PowerShell 脚本、百炼接口加六个
+    /// 调试命令、设置页写 UI 自动化），全是一次性的。更糟的是有些问题界面上根本看不出来——
+    /// 设置写盘连续失败十几次，界面照常显示新值，用户毫无察觉。
+    ///
+    /// 报告内容由 <see cref="DiagnosticReport"/> 负责脱敏：不含密钥、登录态与任何额度数值。
+    /// </summary>
+    private void GenerateDiagnosticReport()
+    {
+        if (_collectDiagnostics is null)
+        {
+            StatusMessage = "当前环境无法生成诊断报告";
+            return;
+        }
+
+        try
+        {
+            var text = DiagnosticReport.Build(_collectDiagnostics(), DateTimeOffset.Now);
+            var path = Path.Combine(DataDirectory, $"QuotaFlow-诊断报告-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
+            File.WriteAllText(path, text);
+
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
+            }
+            catch (Exception)
+            {
+                // 打不开就算了，文件已经生成，下面把路径告诉用户。
+            }
+
+            StatusMessage = $"诊断报告已生成（已脱敏，可直接发送）：{path}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"生成诊断报告失败：{ex.GetType().Name}";
+        }
     }
 
     /// <summary>配置、缓存、日志所在目录，直接显示给用户。</summary>

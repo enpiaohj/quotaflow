@@ -366,6 +366,22 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
     /// 把设置里"用户手动隐藏的平台"应用到卡片上。隐藏只影响可见性，卡片实例、缓存和刷新
     /// 状态都保留——重新勾选显示时不需要等下一轮刷新就能看到上次的数据。
     /// </summary>
+    /// <summary>
+    /// 采集各平台的诊断信息。刻意只取状态与错误分类，不取任何额度数值——
+    /// 诊断报告是要发给开发者的，脱敏是硬性要求（见 DiagnosticReport）。
+    /// </summary>
+    public IReadOnlyList<ProviderDiagnostic> CollectDiagnostics() =>
+    [
+        .. Cards.Select(c => new ProviderDiagnostic
+        {
+            ProviderId = c.ProviderId,
+            State = c.State,
+            ErrorCategory = c.CurrentSnapshot?.ErrorCategory ?? ErrorCategory.None,
+            LastUpdatedAt = c.CurrentSnapshot?.LastUpdatedAt,
+            DataSourceHost = DiagnosticReport.HostOnly(c.CurrentSnapshot?.DataSource),
+        }),
+    ];
+
     private void ApplyHiddenPlatforms(string[]? hidden)
     {
         var hiddenSet = hidden is { Length: > 0 }

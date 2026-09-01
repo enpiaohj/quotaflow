@@ -34,6 +34,12 @@ public partial class App : Application
 
     /// <summary>当前生效的代理设置，由 <see cref="ConfigurableProxy"/> 每次请求时读取。</summary>
     private (ProxyMode Mode, string? Address) _proxySettings;
+
+    /// <summary>本次运行是否记录到过设置写盘失败，供诊断报告如实呈现。</summary>
+    private bool _settingsSaveFailed;
+
+    /// <summary>诊断报告用的代理描述器，与 HttpErrorClassifier 共用同一个 ConfigurableProxy。</summary>
+    private Func<string?>? _describeProxy;
     private System.Windows.Forms.Timer? _trayClickDebounceTimer;
     private bool _trayPendingSingleClick;
     private readonly GlobalHotkeyService _hotkeyService = new();
@@ -61,7 +67,10 @@ public partial class App : Application
         // 显示新值、磁盘一个字节没变，用户完全无从察觉，重启后才发现设置全丢。降级本身要保留
         // （写失败曾把启动流程带崩、连托盘图标都来不及创建），但必须留下痕迹。
         _settingsStore.OnSaveFailed = ex =>
+        {
+            _settingsSaveFailed = true;
             LogCrash(new InvalidOperationException("保存设置失败（已静默降级，本次改动未写入磁盘）", ex));
+        };
 
         var settings = _settingsStore.Load();
 
@@ -76,7 +85,8 @@ public partial class App : Application
         };
 
         // 网络类错误提示带上实际使用的代理——代理配错时"请检查网络连接"会把人引向错误方向。
-        HttpErrorClassifier.ProxyDescriber = () => proxy.DescribeFor(new Uri("https://api.anthropic.com"));
+        _describeProxy = () => proxy.DescribeFor(new Uri("https://api.anthropic.com"));
+        HttpErrorClassifier.ProxyDescriber = _describeProxy;
         _themeManager.Apply(settings.Theme);
         SystemEvents.UserPreferenceChanged += OnSystemPreferenceChanged;
 
@@ -339,7 +349,8 @@ public partial class App : Application
 
         var currentSettings = _settingsStore.Load();
         var settingsViewModel = new SettingsViewModel(_settingsStore, _credentialStore, _cache, currentSettings,
-            _presentation, applyHotkeySettings: ApplyHotkeySettings);
+            _presentation, applyHotkeySettings: ApplyHotkeySettings,
+            collectDiagnostics: CollectDiagnostics);
         settingsViewModel.SettingsSaved += (_, newSettings) =>
         {
             _themeManager.Apply(newSettings.Theme);
@@ -359,6 +370,64 @@ public partial class App : Application
         };
         _settingsWindow.Show();
         _settingsWindow.Activate();
+    }
+
+
+    /// <summary>
+    /// 采集诊断报告所需的运行时信息。放在组合根：只有这里同时看得到版本、代理、面板状态与日志。
+    /// 内容的脱敏由 <see cref="DiagnosticReport"/> 负责，这里刻意不取任何额度数值。
+    /// </summary>
+    private DiagnosticInput CollectDiagnostics()
+    {
+        var settings = _settingsStore.Load();
+        return new DiagnosticInput
+        {
+            AppVersion = typeof(App).Assembly.GetName().Version?.ToString(3) ?? "unknown",
+            OsVersion = Environment.OSVersion.VersionString,
+            IsRemoteSession = System.Windows.Forms.SystemInformation.TerminalServerSession,
+            ProxyMode = settings.ProxyMode,
+            EffectiveProxy = _describeProxy?.Invoke(),
+            AutoRefreshIntervalMinutes = settings.AutoRefreshIntervalMinutes,
+            // 只在确实记录到失败时报 false；没记录到失败不等于确认成功过，用 null 表达"未知"。
+            LastSettingsSaveSucceeded = _settingsSaveFailed ? false : null,
+            Providers = _panelViewModel?.CollectDiagnostics() ?? [],
+            RecentErrorTypes = ReadRecentErrorTypes(),
+        };
+    }
+
+    /// <summary>读取 crash.log 里最近若干条异常的类型名。只取类型，不取消息与堆栈——
+    /// 那里面可能有本机路径，而类型名足以判断问题性质。</summary>
+    private static IReadOnlyList<string> ReadRecentErrorTypes()
+    {
+        try
+        {
+            var path = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "QuotaFlow", "crash.log");
+            if (!File.Exists(path))
+            {
+                return [];
+            }
+
+            var types = new List<string>();
+            foreach (var line in File.ReadLines(path))
+            {
+                var marker = line.IndexOf("] ", StringComparison.Ordinal);
+                if (!line.StartsWith('[') || marker < 0)
+                {
+                    continue;
+                }
+
+                var rest = line[(marker + 2)..];
+                var colon = rest.IndexOf(':');
+                types.Add(colon > 0 ? rest[..colon] : rest);
+            }
+
+            return types.Count > 30 ? types[^30..] : types;
+        }
+        catch (Exception)
+        {
+            return [];
+        }
     }
 
     private void OnDispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
