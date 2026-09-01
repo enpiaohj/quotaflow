@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
@@ -34,7 +35,12 @@ namespace QuotaFlow.Windows.App.Views;
 /// </summary>
 public partial class AlibabaLoginWindow : Window
 {
-    private const string ConsoleUrl = "https://bailian.console.aliyun.com/cn-beijing?tab=plan";
+    // 必须直接落到 Token Plan 个人版这个 hash 路由上：控制台是 efm 异步微前端，业务接口由具体
+    // 路由对应的 chunk 在运行时发起。只导航到 ?tab=plan 会被重定向到 overview，那个页面根本
+    // 不调用额度接口（实测只调了 GetTokenPlanAccountDetail 这种账号信息接口）。
+    private const string ConsoleUrl =
+        "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan/personal";
+
 
     /// <summary>
     /// 【已废弃的判定方式，保留说明以免重蹈覆辙】早期用"存在某些 Cookie 名"来判定已登录，
@@ -67,7 +73,6 @@ public partial class AlibabaLoginWindow : Window
     private bool _closedByUser;
     private bool _webViewReady;
     private bool _navigated;
-    private int _networkResponseCount;
 
     /// <summary>登录成功事件：携带抓取到的 Cookie 字符串 + 页面里提取到的 SEC_TOKEN（均为空
     /// 字符串表示未取到；仅内存传递，调用方负责安全存储）。</summary>
@@ -102,90 +107,6 @@ public partial class AlibabaLoginWindow : Window
             // 集合，只能靠 FrameCreated 事件持续收集，供提取 SEC_TOKEN 时逐个尝试。
             LoginWebView.CoreWebView2.FrameCreated += (_, args) => _childFrames.Add(args.Frame);
 
-            // 临时诊断（问题解决后删除）：SEC_TOKEN 既不在主/子 frame 的 window 全局或 DOM 里，
-            // 也不是一个 Cookie 名——排除了目前所有假设。改为监听全部网络响应，看它是否是某次
-            // XHR/fetch 响应体里的字段（不挂在 window 上、只存在于页面脚本的闭包变量里，
-            // 外部 ExecuteScriptAsync 天然访问不到）。只记录"哪个 URL 的响应体里含有该字符串"
-            // 这类结构性信息，不记录响应体内容本身。
-            Interlocked.Exchange(ref _networkResponseCount, 0);
-            LoginWebView.CoreWebView2.WebResourceResponseReceived += async (_, args) =>
-            {
-                Interlocked.Increment(ref _networkResponseCount);
-                try
-                {
-                    var url = args.Request.Uri;
-                    var contentType = args.Response.Headers.FirstOrDefault(h => h.Key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase)).Value ?? "";
-
-                    // 不再按 Content-Type 过滤——之前只看 json/text 会漏掉 application/javascript
-                    // 这类脚本响应，而 SEC_TOKEN 的生成逻辑很可能就内嵌在某个业务 JS 文件里。
-                    // 跳过明显的图片/字体二进制资源即可，其余一律检查响应体文本内容。
-                    if (contentType.Contains("image/", StringComparison.OrdinalIgnoreCase) ||
-                        contentType.Contains("font/", StringComparison.OrdinalIgnoreCase) ||
-                        contentType.Contains("audio/", StringComparison.OrdinalIgnoreCase) ||
-                        contentType.Contains("video/", StringComparison.OrdinalIgnoreCase))
-                    {
-                        return;
-                    }
-
-                    using var stream = await args.Response.GetContentAsync();
-                    if (stream is null)
-                    {
-                        return;
-                    }
-
-                    using var reader = new StreamReader(stream);
-                    var body = await reader.ReadToEndAsync();
-
-                    var diagPath = Path.Combine(Path.GetTempPath(), "quotaflow-tokenplan-network-diag.txt");
-
-                    if (body.Contains("SEC_TOKEN", StringComparison.Ordinal))
-                    {
-                        File.AppendAllText(diagPath,
-                            $"[{DateTime.Now:HH:mm:ss}] Response body contains 'SEC_TOKEN': {url} (Content-Type: {contentType}, length: {body.Length})\n");
-                    }
-
-                    // 关键诊断：实测原定的网关地址（bailian-cs.console.aliyun.com/data/api.json）
-                    // 对任何请求都统一 302 到 err.taobao.com——伪造 action、不带 Cookie 的对照组
-                    // 返回完全一致，证明请求在路由层就被拒，该地址已不适用于当前控制台。
-                    // 这里改为观察控制台自己真正调用了哪个用量/订阅接口：只记录 URL、状态码、
-                    // 以及"响应体里是否出现目标字段名"，绝不记录响应体内容本身。
-                    var isApiCall = url.Contains("/api", StringComparison.OrdinalIgnoreCase)
-                                    || url.Contains("api.json", StringComparison.OrdinalIgnoreCase)
-                                    || url.Contains("/data/", StringComparison.OrdinalIgnoreCase);
-                    var mentionsUsage = url.Contains("usage", StringComparison.OrdinalIgnoreCase)
-                                        || url.Contains("tokenplan", StringComparison.OrdinalIgnoreCase)
-                                        || url.Contains("token-plan", StringComparison.OrdinalIgnoreCase)
-                                        || url.Contains("subscription", StringComparison.OrdinalIgnoreCase)
-                                        || url.Contains("quota", StringComparison.OrdinalIgnoreCase)
-                                        || url.Contains("remain", StringComparison.OrdinalIgnoreCase);
-                    var bodyHasTargetFields = body.Contains("per1WeekPercentage", StringComparison.Ordinal)
-                                              || body.Contains("per1WeekResetTime", StringComparison.Ordinal);
-
-                    if (bodyHasTargetFields)
-                    {
-                        // 命中目标字段 = 找到了真正提供额度数据的接口，这是最高价值的线索。
-                        File.AppendAllText(diagPath,
-                            $"[{DateTime.Now:HH:mm:ss}] *** TARGET FIELDS FOUND *** {args.Request.Method} {url} -> HTTP {args.Response.StatusCode} (len {body.Length})\n");
-                    }
-                    else if (mentionsUsage || (isApiCall && contentType.Contains("json", StringComparison.OrdinalIgnoreCase)))
-                    {
-                        File.AppendAllText(diagPath,
-                            $"[{DateTime.Now:HH:mm:ss}] api call: {args.Request.Method} {url} -> HTTP {args.Response.StatusCode} (len {body.Length})\n");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    // 记录异常类型（不含内容），帮助判断是否 GetContentAsync 本身就失败了。
-                    try
-                    {
-                        File.AppendAllText(Path.Combine(Path.GetTempPath(), "quotaflow-tokenplan-network-diag.txt"),
-                            $"[{DateTime.Now:HH:mm:ss}] Probe failed for {args.Request.Uri}: {ex.GetType().Name}\n");
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
-            };
 
             _webViewReady = true;
 
@@ -284,11 +205,20 @@ public partial class AlibabaLoginWindow : Window
         _loginSucceeded = true;
         _detectTimer.Stop();
 
-        // 登录成功后先让页面继续跑一会儿，等 Token Plan 额度页把它自己的数据接口调完——
-        // 我们需要通过网络监听观察控制台真正调用的是哪个用量接口（原定的网关地址已被实测
-        // 证明对任何请求都统一 302 拒绝）。立刻关窗会错过这些请求。
-        StatusHint.Text = "已登录，正在读取额度信息…";
-        await Task.Delay(6000);
+        // 登录流程会经过阿里云的重定向，落地页往往已经不是我们要的 hash 路由了，所以这里显式
+        // 再导航一次到 Token Plan 个人版页面，确保 SEC_TOKEN 已由控制台脚本注入后再去提取。
+        StatusHint.Text = "已登录，正在读取额度所需信息…";
+        try
+        {
+            LoginWebView.CoreWebView2.Navigate(ConsoleUrl);
+        }
+        catch (Exception)
+        {
+            // 导航失败不致命：页面可能已经在目标路由上，继续等待即可。
+        }
+
+        // 留一小段时间让 SPA 完成路由并注入 SEC_TOKEN；立刻提取会取不到。
+        await Task.Delay(3000);
 
         string cookieString;
         try
@@ -438,70 +368,7 @@ public partial class AlibabaLoginWindow : Window
             }
         }
 
-        // 临时诊断（问题解决后删除）：主 frame 和所有已知子 frame 都提取不到时，把结构性诊断
-        // 信息（不含任何 token/Cookie 值本身）写到本机临时文件，帮助判断根因。
-        try
-        {
-            await DiagnoseFrameStructureAsync();
-        }
-        catch (Exception)
-        {
-            // 诊断失败不影响主流程。
-        }
-
         return string.Empty;
-    }
-
-    /// <summary>临时诊断（问题解决后删除）：枚举 WebView2 里所有子 frame，尝试在每个 frame 上下文
-    /// 执行同样的探测脚本，把"哪个 frame 里能看到 SEC_TOKEN"这类结构性信息写入本机文件——
-    /// 绝不写入 token/Cookie 的实际值。</summary>
-    private async Task DiagnoseFrameStructureAsync()
-    {
-        var lines = new List<string>
-        {
-            $"[{DateTime.Now:HH:mm:ss}] Main frame URL: {LoginWebView.Source}",
-            $"Network responses observed so far: {Volatile.Read(ref _networkResponseCount)}",
-        };
-
-        const string probeJs = """
-            (function () {
-                try {
-                    var hasSecToken = typeof window.SEC_TOKEN !== 'undefined' && !!window.SEC_TOKEN;
-                    var htmlHasSecToken = (document.documentElement ? document.documentElement.outerHTML : '').indexOf('SEC_TOKEN') >= 0;
-                    return JSON.stringify({ href: location.href, hasSecToken: hasSecToken, htmlHasSecToken: htmlHasSecToken, bodyLen: document.body ? document.body.innerHTML.length : 0 });
-                } catch (e) { return JSON.stringify({ error: e.message }); }
-            })();
-            """;
-
-        try
-        {
-            var mainResult = await LoginWebView.CoreWebView2.ExecuteScriptAsync(probeJs);
-            lines.Add($"Main frame probe: {mainResult}");
-        }
-        catch (Exception ex)
-        {
-            lines.Add($"Main frame probe failed: {ex.GetType().Name}");
-        }
-
-        var frames = _childFrames.ToArray();
-        lines.Add($"Child frame count (via FrameCreated): {frames.Length}");
-        var index = 0;
-        foreach (var frame in frames)
-        {
-            try
-            {
-                var frameResult = await frame.ExecuteScriptAsync(probeJs);
-                lines.Add($"Frame[{index}] Name='{frame.Name}' probe: {frameResult}");
-            }
-            catch (Exception ex)
-            {
-                lines.Add($"Frame[{index}] Name='{frame.Name}' probe failed: {ex.GetType().Name}: {ex.Message}");
-            }
-
-            index++;
-        }
-
-        File.AppendAllLines(Path.Combine(Path.GetTempPath(), "quotaflow-tokenplan-frame-diag.txt"), lines);
     }
 
     private void OnCancelClick(object sender, RoutedEventArgs e)

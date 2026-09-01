@@ -6,6 +6,61 @@
 > 保留不动）。从 `v0.5.0` 起改用 `0.x.y`——阿里云百炼 Token Plan 这个 Provider 仍处于快速试错
 > 阶段，`0.x` 更准确地反映"尚未达到可对外承诺稳定性"的真实状态，待其稳定后再规划重新回到 `1.x`。
 
+## [0.6.0] - 2026-09-01
+
+### Fixed
+
+**阿里云百炼 Token Plan 额度查询打通，从"始终失败"变为可正常显示。**
+
+`v0.5.5` 判定"原定网关地址已废弃"是**错误结论**，本版予以更正。真实原因是请求体构造不完整，
+而非地址失效——最初规格文档给出的网关地址、`action`、`product`、字段名**全部正确**。
+
+用 WebView2 网络监听抓取控制台自身的真实调用后，比对出三处差异：
+
+| 环节 | v0.5.5 的错误做法 | 正确做法 |
+|---|---|---|
+| `sec_token` 位置 | 放 query / 请求头，字段名大写 `SEC_TOKEN` | **只能放 POST body**，字段名小写 `sec_token` |
+| 请求体 | 空 body | 必须带 `params` 信封 + `region` |
+| `params` 信封 | 未构造 | 必须含 `cornerstoneParam`，否则内层返回 `Bad Request` |
+
+空 body 的请求在网关层就被 302 拒绝，因此"伪造 action"和"不带 Cookie"两个对照组才会返回
+完全一致的响应——它们根本没进入业务逻辑。据此推断"地址失效"属于对实验结果的误读。
+
+同时修复一个会导致查询直接崩溃的缺陷：网关响应里的 `code` 是**字符串**（`"200"` / `"SUCCESS"` /
+`"PostonlyOrTokenError"`），而解析代码直接调用 `JsonElement.TryGetInt64`——该方法在非 Number
+元素上是**抛 `InvalidOperationException`** 而不是返回 `false`，整个查询流程会崩溃。现已兼容
+数字与字符串两种形态。
+
+### Changed
+
+- Token Plan 卡片由"7 天已用 + 7 天剩余"两个窗口合并为单个"7 天额度"窗口。两者原本由
+  `QuotaWindow.FromUtilization` / `FromRemaining` 构造，产出的是**完全相同**的对象（内部同时
+  存 remaining 与 used），而面板按全局"剩余/已用"开关统一渲染，导致名为"7 天已用"的卡片
+  实际显示剩余值，语义自相矛盾。已用比例仍保留在同一窗口的 `UsedPercent` 中。
+- 一键登录窗口改为直接导航到 Token Plan 个人版路由
+  （`#/efm/subscription/token-plan/personal`）。此前导航到 `?tab=plan` 会被重定向到概览页，
+  该页面不会调用额度接口。
+
+### Removed
+
+- 移除全部临时诊断代码：登录窗口的网络响应监听、请求头/请求体记录、页面内 fetch 探针、
+  frame 结构诊断；PocConsole 的 `diag-tokenplan` / `diag-tokenplan-html` / `diag-gateway` /
+  `diag-newapi` / `diag-js` / `clear-tokenplan` 命令。诊断期间写入的临时文件仅包含结构性信息
+  （URL、字段名、长度），从未记录 Cookie、SEC_TOKEN 或额度数值。
+
+### Verification
+
+- Build：`dotnet build -c Release` —— 0 错误 0 警告
+- Tests：244 / 244 通过（新增 3 个回归测试：真实网关响应形态含字符串 `code` 与五层嵌套、
+  内层 `success:false` 必须报错而非显示 0%、`params` 信封必须含 `cornerstoneParam`）
+- 真实账号端到端：`状态 Available，7 天额度剩余 53.0% / 已用 47.0%，重置于 2026-09-08 08:58`
+
+### Known Issues
+
+- `per1WeekPercentage` 的原始值（如 `0.4696`）按"比例"解读为已用 46.96%。该解读与控制台
+  显示一致，但尚未由阿里云公开文档确认。
+- 该接口为控制台内部接口，非公开 API，阿里云可能随时变更。
+
 ## [0.5.5] - 2026-09-01
 
 ### 进展与新发现

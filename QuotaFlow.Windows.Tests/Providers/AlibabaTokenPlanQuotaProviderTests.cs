@@ -1,3 +1,4 @@
+using System.Text.Json;
 using QuotaFlow.Windows.Core.Models;
 using QuotaFlow.Windows.Core.Providers;
 
@@ -35,6 +36,95 @@ public class AlibabaTokenPlanQuotaProviderTests
         Assert.Null(usage.Error);
         Assert.Equal(79.13, usage.UsedPercent, precision: 2);
         Assert.Equal(DateTimeOffset.FromUnixTimeMilliseconds(1799000000000L), usage.ResetsAt);
+    }
+
+    /// <summary>
+    /// 真实网关响应的回归测试（结构照抄抓包所得，数值为构造值）。
+    ///
+    /// 这里锁住两个曾经导致查询完全不可用的缺陷：
+    /// 一是 <c>code</c> 是<b>字符串</b>（<c>"200"</c> / <c>"SUCCESS"</c>）而非数字，早期实现直接
+    /// 调 <c>TryGetInt64</c>，在非 Number 元素上会抛 <see cref="InvalidOperationException"/>，
+    /// 整个查询崩溃；二是额度字段埋在 <c>data.DataV2.data.data</c> 五层嵌套里，递归查找的深度
+    /// 上限必须够。
+    /// </summary>
+    [Fact]
+    public void ParseUsageResponse_RealGatewayShape_StringCodesAndDeepNesting_Parses()
+    {
+        var json = """
+            {
+              "code": "200",
+              "data": {
+                "DataV2": {
+                  "ret": ["SUCCESS::接口调用成功"],
+                  "data": {
+                    "msg": "Success.",
+                    "code": "SUCCESS",
+                    "data": {
+                      "per1WeekResetTime": 1788829080000,
+                      "per1WeekPercentage": 0.46964957599999996
+                    },
+                    "success": true
+                  }
+                }
+              },
+              "httpStatusCode": "200",
+              "successResponse": true
+            }
+            """;
+
+        var usage = CreateProvider().ParseUsageResponse(json);
+
+        Assert.Null(usage.Error);
+        Assert.Equal(46.96, usage.UsedPercent, precision: 2);
+        Assert.Equal(DateTimeOffset.FromUnixTimeMilliseconds(1788829080000L), usage.ResetsAt);
+    }
+
+    /// <summary>
+    /// 网关在参数不全时会返回 HTTP 200 + 内层 <c>success:false</c>（实测缺 cornerstoneParam
+    /// 就是这个形态）。这种"看起来成功、实则失败"的响应必须被识别成错误，绝不能落到额度显示上。
+    /// </summary>
+    [Fact]
+    public void ParseUsageResponse_InnerSuccessFalse_ReturnsErrorNotZeroUsage()
+    {
+        var json = """
+            {
+              "code": "200",
+              "data": {
+                "success": false,
+                "httpStatus": 200,
+                "errorCode": "Bad Request",
+                "api": "zeldaHttp.apikeyMgr./tokenplan/personal/api/v2/usage",
+                "errorMsg": "Bad Request"
+              },
+              "successResponse": true
+            }
+            """;
+
+        var usage = CreateProvider().ParseUsageResponse(json);
+
+        Assert.NotNull(usage.Error);
+        Assert.Equal(ProviderState.ProviderError, usage.Error!.State);
+    }
+
+    /// <summary>
+    /// 网关信封必须带 cornerstoneParam——只发 <c>{"Api":…,"V":"1.0","Data":{}}</c> 时实测
+    /// 内层返回 Bad Request。这个测试防止有人"简化"掉这段看似冗余的元数据。
+    /// </summary>
+    [Fact]
+    public void BuildGatewayParams_IncludesCornerstoneParam()
+    {
+        var json = AlibabaTokenPlanQuotaProvider.BuildGatewayParams(AlibabaTokenPlanQuotaProvider.UsageApi);
+
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        Assert.Equal(AlibabaTokenPlanQuotaProvider.UsageApi, root.GetProperty("Api").GetString());
+        Assert.Equal("1.0", root.GetProperty("V").GetString());
+
+        var cornerstone = root.GetProperty("Data").GetProperty("cornerstoneParam");
+        Assert.Equal("V2", cornerstone.GetProperty("protocol").GetString());
+        Assert.Equal("ONE_CONSOLE", cornerstone.GetProperty("console").GetString());
+        Assert.Equal("p_efm", cornerstone.GetProperty("productCode").GetString());
     }
 
     [Fact]

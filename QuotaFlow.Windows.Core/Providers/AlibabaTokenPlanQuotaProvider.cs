@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -41,6 +42,40 @@ public sealed class AlibabaTokenPlanQuotaProvider : IQuotaProvider
 
     /// <summary>控制台统一网关；第二步 POST 数据都发到这里。</summary>
     public const string GatewayUrl = "https://bailian-cs.console.aliyun.com/data/api.json";
+
+    /// <summary>网关转发的目标接口路径（字面量，不做百分号编码，与控制台真实请求一致）。</summary>
+    internal const string UsageApi = "zeldaHttp.apikeyMgr./tokenplan/personal/api/v2/usage";
+
+    /// <summary>
+    /// 构造网关信封 <c>params</c>。
+    ///
+    /// <c>cornerstoneParam</c> 不是可选的埋点数据——实测只发 <c>{"Api":…,"V":"1.0","Data":{}}</c>
+    /// 时网关会返回内层 <c>Bad Request</c>，补上这组字段后才返回真实用量。这里只保留控制台请求里
+    /// 那些稳定的结构性字段，刻意不带 feTraceId / feURL / X-Anonymous-Id / switchAgent 等
+    /// 会话级或账号级字段：它们既不影响结果，也不该由本程序伪造。
+    /// </summary>
+    internal static string BuildGatewayParams(string api)
+    {
+        var envelope = new
+        {
+            Api = api,
+            V = "1.0",
+            Data = new
+            {
+                cornerstoneParam = new
+                {
+                    protocol = "V2",
+                    console = "ONE_CONSOLE",
+                    productCode = "p_efm",
+                    domain = "bailian.console.aliyun.com",
+                    consoleSite = "BAILIAN_ALIYUN",
+                    xsp_lang = "zh-CN",
+                },
+            },
+        };
+
+        return JsonSerializer.Serialize(envelope);
+    }
 
     private static readonly Regex SecTokenPattern = new(@"\bSEC_TOKEN\s*:\s*""([^""]+)""", RegexOptions.Compiled);
 
@@ -105,8 +140,11 @@ public sealed class AlibabaTokenPlanQuotaProvider : IQuotaProvider
             _ => ProviderState.Available,
         };
 
-        // 一张卡两个窗口：已用 / 剩余，覆盖"测试阶段 UI 要同时看到 7 天使用率和剩余"的需求，
-        // 同时完全复用现有卡片模板（QuotaWindow），不改任何共享 UI。
+        // 只保留一个窗口。早期为了"测试阶段同时看到已用和剩余"建了 weekly_used / weekly_remaining
+        // 两个窗口，但 QuotaWindow.FromUtilization(已用) 和 FromRemaining(剩余) 产出的是完全
+        // 相同的对象（内部都存 remaining + used），而面板卡片统一显示"剩余"——结果两张卡都显示
+        // 53%，其中标着"7 天已用"的那张实际显示的是剩余值，属于明确的错误信息。
+        // 已用比例并没有丢失：它在同一个 QuotaWindow 的 UsedPercent 里，与其他 Provider 一致。
         return new ProviderSnapshot
         {
             ProviderId = ProviderId,
@@ -114,8 +152,7 @@ public sealed class AlibabaTokenPlanQuotaProvider : IQuotaProvider
             State = state,
             QuotaWindows =
             [
-                QuotaWindow.FromUtilization("weekly_used", "7 天已用", usage.UsedPercent, usage.ResetsAt),
-                QuotaWindow.FromRemaining("weekly_remaining", "7 天剩余", remaining, usage.ResetsAt),
+                QuotaWindow.FromRemaining("weekly", "7 天额度", remaining, usage.ResetsAt),
             ],
             LastUpdatedAt = DateTimeOffset.UtcNow,
             DataSource = GatewayUrl,
@@ -220,17 +257,26 @@ public sealed class AlibabaTokenPlanQuotaProvider : IQuotaProvider
     /// <summary>第二步：POST 控制台网关拿 7 天周期用量。</summary>
     private async Task<UsageResult> FetchUsageAsync(string cookie, string secToken, CancellationToken cancellationToken)
     {
+        // api 参数在控制台的真实请求里是不做百分号编码的字面量（含 . 和 /），保持一致。
         var query = "action=BroadScopeAspnGateway"
                     + "&product=sfm_bailian"
-                    + "&api=zeldaHttp.apikeyMgr.%2Ftokenplan%2Fpersonal%2Fapi%2Fv2%2Fusage";
+                    + $"&api={UsageApi}"
+                    + "&_v=undefined";
         using var request = new HttpRequestMessage(HttpMethod.Post, $"{GatewayUrl}?{query}");
         request.Headers.TryAddWithoutValidation("Cookie", cookie);
         request.Headers.TryAddWithoutValidation("Origin", "https://bailian.console.aliyun.com");
         request.Headers.TryAddWithoutValidation("Referer", ConsoleUrl);
+
+        // 请求体的三个字段缺一不可，全部由抓包比对确定：
+        //   params    —— 网关信封，必须带 cornerstoneParam，否则内层返回 "Bad Request"（实测对照组）
+        //   region    —— 区域
+        //   sec_token —— 小写下划线，且只能放在 body 里；放 query 或请求头都会被网关 302 掉
+        // 早期版本发的是空 body + 大写 SEC_TOKEN，请求在网关层就被拒，这正是长期查询失败的根因。
         request.Content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
-            ["SEC_TOKEN"] = secToken,
+            ["params"] = BuildGatewayParams(UsageApi),
             ["region"] = Region,
+            ["sec_token"] = secToken,
         });
 
         HttpResponseMessage response;
@@ -342,6 +388,73 @@ public sealed class AlibabaTokenPlanQuotaProvider : IQuotaProvider
         }
     }
 
+    /// <summary>
+    /// 读取节点上的 <c>code</c>，兼容数字与字符串两种形态。
+    ///
+    /// 实测这个网关的 <c>code</c> 是字符串（<c>"200"</c>、<c>"SUCCESS"</c>、
+    /// <c>"PostonlyOrTokenError"</c> 都出现过）。<see cref="JsonElement.TryGetInt64"/> 在
+    /// 非 Number 元素上是<b>抛异常</b>而不是返回 false，直接调用会让整个查询崩掉。
+    /// </summary>
+    private static bool TryReadCode(JsonElement node, out long numeric, out string? text)
+    {
+        numeric = 0;
+        text = null;
+
+        if (!node.TryGetProperty("code", out var codeEl))
+        {
+            return false;
+        }
+
+        switch (codeEl.ValueKind)
+        {
+            case JsonValueKind.Number when codeEl.TryGetInt64(out var n):
+                numeric = n;
+                text = n.ToString(CultureInfo.InvariantCulture);
+                return true;
+            case JsonValueKind.String:
+                text = codeEl.GetString();
+                if (long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+                {
+                    numeric = parsed;
+                }
+
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>判断一个 code 是否表示成功。</summary>
+    private static bool IsSuccessCode(long numeric, string? text)
+    {
+        if (numeric is 0 or 200)
+        {
+            return true;
+        }
+
+        return text is not null
+               && (text.Equals("SUCCESS", StringComparison.OrdinalIgnoreCase)
+                   || text.Equals("OK", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>从节点上取一条可读的错误描述。</summary>
+    private static string? ReadMessage(JsonElement node)
+    {
+        foreach (var key in new[] { "message", "errorMessage", "errorMsg", "msg", "errorCode" })
+        {
+            if (node.TryGetProperty(key, out var el) && el.ValueKind == JsonValueKind.String)
+            {
+                var value = el.GetString();
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    return value;
+                }
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>检查根节点里是否带"业务失败"标记（code/success 语义）。</summary>
     private static bool TryReadErrorMessage(JsonElement root, out long code, out string? message)
     {
@@ -350,35 +463,28 @@ public sealed class AlibabaTokenPlanQuotaProvider : IQuotaProvider
 
         foreach (var key in new[] { "result", "data" })
         {
-            if (root.TryGetProperty(key, out var node))
+            if (root.TryGetProperty(key, out var node) && node.ValueKind == JsonValueKind.Object)
             {
-                if (node.TryGetProperty("code", out var codeEl) && codeEl.TryGetInt64(out var c))
+                if (TryReadCode(node, out var c, out var t) && !IsSuccessCode(c, t))
                 {
                     code = c;
-                    if (code != 0 && code != 200)
-                    {
-                        if (node.TryGetProperty("message", out var msgEl)) message = msgEl.GetString();
-                        else if (node.TryGetProperty("errorMessage", out var errEl)) message = errEl.GetString();
-                        return true;
-                    }
+                    message = ReadMessage(node) ?? t;
+                    return true;
                 }
 
                 if (node.TryGetProperty("success", out var okEl) && okEl.ValueKind == JsonValueKind.False)
                 {
-                    if (node.TryGetProperty("message", out var msgEl2)) message = msgEl2.GetString();
-                    else if (node.TryGetProperty("errorMessage", out var errEl2)) message = errEl2.GetString();
+                    message = ReadMessage(node);
                     return true;
                 }
             }
         }
 
         // 顶层也可能直接带 code/success（部分网关形态）。
-        if (root.TryGetProperty("code", out var topCode) && topCode.TryGetInt64(out var topC) &&
-            topC != 0 && topC != 200)
+        if (TryReadCode(root, out var topC, out var topT) && !IsSuccessCode(topC, topT))
         {
             code = topC;
-            if (root.TryGetProperty("message", out var topMsg)) message = topMsg.GetString();
-            else if (root.TryGetProperty("errorMessage", out var topErr)) message = topErr.GetString();
+            message = ReadMessage(root) ?? topT;
             return true;
         }
 
