@@ -445,7 +445,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         IsMiniMaxConfigured = !string.IsNullOrEmpty(_credentialStore.TryRead(MiniMaxKeyName));
         IsDeepSeekConfigured = !string.IsNullOrEmpty(_credentialStore.TryRead(DeepSeekKeyName));
-        IsTokenPlanConfigured = !string.IsNullOrEmpty(_credentialStore.TryRead(TokenPlanCookieKeyName, useUtf8: true));
+        IsTokenPlanConfigured = !string.IsNullOrEmpty(_credentialStore.TryReadLarge(TokenPlanCookieKeyName));
         MiniMaxConfiguredText = IsMiniMaxConfigured ? "已配置" : "未配置";
         DeepSeekConfiguredText = IsDeepSeekConfigured ? "已配置" : "未配置";
     }
@@ -556,11 +556,13 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
     }
 
-    /// <summary>把登录抓到的 Cookie（+ 可选 SEC_TOKEN）写入 Windows 凭据管理器。Cookie/SEC_TOKEN
-    /// 都是 ASCII 长值，用 UTF-8 编码存储以绕过凭据管理器单个凭据 2560 字节的 UTF-16 上限。</summary>
+    /// <summary>把登录抓到的 Cookie（+ 可选 SEC_TOKEN）写入 Windows 凭据管理器。完整会话 Cookie
+    /// 常年超过凭据管理器单条 2560 字节上限，用 <see cref="SecureCredentialStore.SaveLarge"/>
+    /// 分片存储——不再靠精简 Cookie 内容硬凑，避免重蹈"猜哪些 Cookie 重要、猜漏了"的覆辙。
+    /// SEC_TOKEN 本身很短，仍用常规 UTF-8 单条存储即可。</summary>
     private void SaveTokenPlanCredentials(string cookie, string? secToken)
     {
-        _credentialStore.Save(TokenPlanCookieKeyName, cookie, useUtf8: true);
+        _credentialStore.SaveLarge(TokenPlanCookieKeyName, cookie);
         if (!string.IsNullOrEmpty(secToken))
         {
             _credentialStore.Save(TokenPlanSecTokenKeyName, secToken, useUtf8: true);
@@ -580,7 +582,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     private void ClearTokenPlanCookie()
     {
-        _credentialStore.Delete(TokenPlanCookieKeyName);
+        _credentialStore.DeleteLarge(TokenPlanCookieKeyName);
         _credentialStore.Delete(TokenPlanSecTokenKeyName);
         RefreshCredentialLabels();
         StatusMessage = "已清除百炼登录态，重新查询前需要再次登录";

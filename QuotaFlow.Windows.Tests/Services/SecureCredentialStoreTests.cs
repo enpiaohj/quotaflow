@@ -106,4 +106,97 @@ public class SecureCredentialStoreTests : IDisposable
             _store.Delete(key);
         }
     }
+
+    // ---- 分片存储（SaveLarge/TryReadLarge/DeleteLarge）----
+    // 实测事故回归：早期为绕开 2560 字节上限，靠"只挑几个域的 Cookie"精简内容，结果漏掉了
+    // 用户实际登录所在域的会话 Cookie，导致查询鉴权信息不完整、反复提示"需要重新登录"。
+    // 分片存储保证任意长度的内容都原样保留，不需要对内容做任何取舍。
+
+    [Fact]
+    public void SaveLarge_ValueFarExceedingSingleCredentialLimit_RoundTripsExactly()
+    {
+        // 6000 字符（远超单条 2560 字节上限，且刻意不是分片预算的整数倍，覆盖"最后一片不满"的情况）。
+        var value = string.Join("; ", Enumerable.Range(0, 150).Select(i => $"cookie_{i}=abcdefghijklmnopqrstuvwxyz0123456789_{i}"));
+        Assert.True(Encoding.UTF8.GetByteCount(value) > 2560 * 2, "测试前置：确实需要至少 3 个分片");
+
+        try
+        {
+            _store.SaveLarge(_testKey, value);
+            var result = _store.TryReadLarge(_testKey);
+
+            Assert.Equal(value, result);
+        }
+        finally
+        {
+            _store.DeleteLarge(_testKey);
+        }
+    }
+
+    [Fact]
+    public void SaveLarge_ShortValue_StillRoundTrips()
+    {
+        // 短值（单分片）也要走通，不因为"不需要分片"就出问题。
+        const string value = "short-fixture-value";
+        try
+        {
+            _store.SaveLarge(_testKey, value);
+            var result = _store.TryReadLarge(_testKey);
+
+            Assert.Equal(value, result);
+        }
+        finally
+        {
+            _store.DeleteLarge(_testKey);
+        }
+    }
+
+    [Fact]
+    public void SaveLarge_Overwrite_WithShorterValue_DoesNotLeaveStaleTrailingChunks()
+    {
+        // 先存一个需要 3 片的长值，再存一个只需要 1 片的短值：如果不清理旧分片，
+        // 读取时会把第 2、3 片的陈旧内容也拼接进去，读出错误的合并结果。
+        var longValue = string.Join("; ", Enumerable.Range(0, 150).Select(i => $"cookie_{i}=abcdefghijklmnopqrstuvwxyz0123456789_{i}"));
+        const string shortValue = "short-fixture-value";
+
+        try
+        {
+            _store.SaveLarge(_testKey, longValue);
+            _store.SaveLarge(_testKey, shortValue);
+            var result = _store.TryReadLarge(_testKey);
+
+            Assert.Equal(shortValue, result);
+        }
+        finally
+        {
+            _store.DeleteLarge(_testKey);
+        }
+    }
+
+    [Fact]
+    public void TryReadLarge_NotYetSaved_ReturnsNull()
+    {
+        var result = _store.TryReadLarge($"test:never-saved-{Guid.NewGuid()}");
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void DeleteLarge_RemovesAllChunksAndCount()
+    {
+        var value = string.Join("; ", Enumerable.Range(0, 150).Select(i => $"cookie_{i}=abcdefghijklmnopqrstuvwxyz0123456789_{i}"));
+        _store.SaveLarge(_testKey, value);
+
+        _store.DeleteLarge(_testKey);
+        var result = _store.TryReadLarge(_testKey);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void DeleteLarge_NeverSaved_DoesNotThrow()
+    {
+        var exception = Record.Exception(() => _store.DeleteLarge($"test:never-saved-{Guid.NewGuid()}"));
+
+        Assert.Null(exception);
+    }
 }

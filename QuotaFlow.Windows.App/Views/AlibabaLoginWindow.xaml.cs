@@ -17,10 +17,14 @@ namespace QuotaFlow.Windows.App.Views;
 /// 用户主账号 ID），或凭据管理器里出现阿里云登录会话 Cookie（login_aliyunid / sid 等），
 /// 两者任一命中即认为登录成功。
 ///
-/// Cookie 只收集<b>网关真正会用到</b>的域：<c>bailian-cs.console.aliyun.com</c>（查询网关）和
-/// <c>www.aliyun.com</c>（父域 .aliyun.com 的登录会话 Cookie）。不收集 bailian.console 页面的
-/// 本地状态/埋点 Cookie——既减小体积（Windows 凭据管理器单个凭据有 2560 字节上限），
-/// 也保证交给网关的正好是网关会收到的那批 Cookie。
+/// Cookie 采集范围：抓取 WebView2 这个登录会话（独立 UserDataFolder）里的<b>全部</b> Cookie，
+/// 不按域名/字段名做任何取舍——早期版本只挑了 bailian-cs.console + www.aliyun.com 两个域，
+/// 结果漏掉了用户实际登录所在的 bailian.console.aliyun.com 自身的会话 Cookie，导致查询时
+/// 鉴权信息不完整，反复出现"需要重新登录"。人为判断"哪个域的 Cookie 是查询必需的"本质上是
+/// 一种脆弱的猜测，一旦服务端鉴权逻辑依赖了某个没被选中的域，就会复现同类问题——所以改为
+/// 完整保留，把"体积可能超过 Windows 凭据管理器单条 2560 字节上限"这个问题交给
+/// <see cref="Core.Services.SecureCredentialStore.SaveLarge"/> 的分片存储解决，而不是靠精简
+/// 内容硬凑。
 ///
 /// 登录成功后还会顺带从页面 JS 里提取 SEC_TOKEN（控制台脚本注入的令牌，供查询网关鉴权），
 /// 一并交还调用方；Provider 优先使用它，避免每次查询都依赖从 HTML 正则提取。
@@ -35,14 +39,6 @@ public partial class AlibabaLoginWindow : Window
     /// <summary>出现即代表已登录的阿里云会话 Cookie 名（任一命中即可）。</summary>
     private static readonly string[] SessionCookieSignals =
         ["login_aliyunid", "login_aliyunid_pk", "sid", "unb", "aliyun_choice", "LOGIN_ALIYUNID"];
-
-    /// <summary>只收集网关（bailian-cs）与父域（www.aliyun.com → .aliyun.com）的 Cookie，
-    /// 它们正好是查询网关请求会携带的那批；不收集 bailian.console 页面自身的本地 Cookie。</summary>
-    private static readonly string[] CookieHosts =
-    [
-        "https://bailian-cs.console.aliyun.com",
-        "https://www.aliyun.com",
-    ];
 
     private readonly DispatcherTimer _detectTimer;
     private bool _loginSucceeded;
@@ -215,39 +211,41 @@ public partial class AlibabaLoginWindow : Window
             return true;
         }
 
-        // ② 会话 Cookie 兜底。
-        var cookies = await LoginWebView.CoreWebView2.CookieManager.GetCookiesAsync(CookieHosts[0]);
+        // ② 会话 Cookie 兜底：uri 传 null 时 WebView2 返回当前 Profile 里的全部 Cookie
+        // （不限定域名——理由见类注释：按域名筛选是脆弱的猜测，曾经因此漏掉过关键会话 Cookie）。
+        var cookies = await LoginWebView.CoreWebView2.CookieManager.GetCookiesAsync(null);
         return cookies.Any(c => SessionCookieSignals.Contains(c.Name, StringComparer.OrdinalIgnoreCase));
     }
 
+    /// <summary>抓取当前登录会话的<b>全部</b> Cookie（不按域名筛选），按
+    /// "域名+路径+名称"去重（同名 Cookie 可能合法地存在于不同域，不能只按名称去重丢弃）。</summary>
     private async Task<string> CollectCookiesAsync()
     {
-        var sb = new StringBuilder();
-        var seenNames = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var host in CookieHosts)
+        IReadOnlyList<CoreWebView2Cookie> cookies;
+        try
         {
-            IReadOnlyList<CoreWebView2Cookie> cookies;
-            try
+            cookies = await LoginWebView.CoreWebView2.CookieManager.GetCookiesAsync(null);
+        }
+        catch (Exception)
+        {
+            return string.Empty;
+        }
+
+        var sb = new StringBuilder();
+        var seen = new HashSet<(string Domain, string Path, string Name)>();
+        foreach (var cookie in cookies)
+        {
+            if (!seen.Add((cookie.Domain, cookie.Path, cookie.Name)))
             {
-                cookies = await LoginWebView.CoreWebView2.CookieManager.GetCookiesAsync(host);
-            }
-            catch (Exception)
-            {
-                continue; // 单个域失败不阻塞整体。
+                continue;
             }
 
-            foreach (var cookie in cookies)
+            if (sb.Length > 0)
             {
-                if (seenNames.Add(cookie.Name))
-                {
-                    if (sb.Length > 0)
-                    {
-                        sb.Append("; ");
-                    }
-
-                    sb.Append(cookie.Name).Append('=').Append(cookie.Value);
-                }
+                sb.Append("; ");
             }
+
+            sb.Append(cookie.Name).Append('=').Append(cookie.Value);
         }
 
         return sb.ToString();

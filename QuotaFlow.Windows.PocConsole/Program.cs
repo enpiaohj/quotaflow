@@ -28,6 +28,8 @@ switch (args[0])
         return ClearKeys(store);
     case "check":
         return await CheckAllAsync(store);
+    case "diag-tokenplan":
+        return await DiagTokenPlanAsync(store);
     case "make-icon":
         return MakeIcon(args);
     case "preview-icon":
@@ -158,6 +160,35 @@ static int ClearKeys(SecureCredentialStore store)
     store.Delete("minimax:ApiKey");
     store.Delete("deepseek:ApiKey");
     Console.WriteLine("已清除 MiniMax / DeepSeek 凭据");
+    return 0;
+}
+
+static async Task<int> DiagTokenPlanAsync(SecureCredentialStore store)
+{
+    // 临时诊断命令：读真实已保存的百炼登录态（App 使用的凭据键名），打印状态与非敏感诊断信息
+    // （Cookie 分片数/合计长度、SEC_TOKEN 是否存在），绝不打印 Cookie/SEC_TOKEN 内容本身。
+    const string cookieKey = "alibaba:tokenplan:consoleCookie";
+    const string secTokenKey = "alibaba:tokenplan:secToken";
+
+    var cookie = store.TryReadLarge(cookieKey);
+    var secToken = store.TryRead(secTokenKey, useUtf8: true);
+
+    Console.WriteLine($"Cookie present: {cookie is not null}, length: {cookie?.Length ?? 0}, pair count: {cookie?.Split(';', StringSplitOptions.RemoveEmptyEntries).Length ?? 0}");
+    Console.WriteLine($"SEC_TOKEN present: {!string.IsNullOrEmpty(secToken)}, length: {secToken?.Length ?? 0}");
+
+    if (cookie is null)
+    {
+        Console.WriteLine("未配置：请先在应用设置页完成一键登录。");
+        return 1;
+    }
+
+    using var httpClient = new HttpClient();
+    httpClient.Timeout = TimeSpan.FromSeconds(20);
+    var provider = new AlibabaTokenPlanQuotaProvider(httpClient, () => cookie, () => secToken);
+
+    Console.WriteLine("=== alibaba-tokenplan ===");
+    var snapshot = await provider.GetSnapshotAsync();
+    PrintSnapshot(snapshot);
     return 0;
 }
 

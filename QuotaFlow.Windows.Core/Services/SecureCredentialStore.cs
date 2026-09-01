@@ -118,6 +118,107 @@ public sealed class SecureCredentialStore
         CredDelete(target, CredTypeGeneric, 0);
     }
 
+    // ---- 分片存储：用于长度不可控、且不能靠"精简内容"适配 2560 字节上限的长值 ----
+    // （典型场景：阿里云百炼 Console Cookie——完整会话可能涉及多个域，人为按域名/字段名
+    // 精简等于在猜哪些 Cookie 是查询必需的，一旦猜错就会复现"每次都提示需要重新登录"这类问题。
+    // 分片存储保证内容原样保留，用多条凭据换取不设上限。）
+
+    private const string ChunkCountSuffix = ":chunks";
+
+    /// <summary>单个分片的字节预算，明显低于 2560 硬上限留出安全余量。</summary>
+    private const int ChunkBudgetBytes = 2000;
+
+    /// <summary>按字节预算切成多个分片凭据（<c>key:chunks</c> 记录分片数，<c>key:0</c>/<c>key:1</c>/…
+    /// 存各分片），全部使用 UTF-8（长值多为 ASCII，UTF-8 更省空间）。</summary>
+    public void SaveLarge(string key, string secret)
+    {
+        // 先清理旧分片，避免新值变短后旧的多余分片残留（读取时会把它们一起拼接进去）。
+        DeleteLarge(key);
+
+        var chunks = SplitByByteBudget(secret, Encoding.UTF8, ChunkBudgetBytes);
+        for (var i = 0; i < chunks.Count; i++)
+        {
+            Save($"{key}{ChunkCountSuffix}:{i}", chunks[i], useUtf8: true);
+        }
+
+        Save($"{key}{ChunkCountSuffix}", chunks.Count.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>读取并拼接分片值；分片计数缺失或任一分片缺失都视为"未配置"（返回 null），
+    /// 不拼出一份残缺内容。</summary>
+    public string? TryReadLarge(string key)
+    {
+        var countText = TryRead($"{key}{ChunkCountSuffix}");
+        if (countText is null || !int.TryParse(countText, out var count) || count <= 0)
+        {
+            return null;
+        }
+
+        var sb = new StringBuilder();
+        for (var i = 0; i < count; i++)
+        {
+            var chunk = TryRead($"{key}{ChunkCountSuffix}:{i}", useUtf8: true);
+            if (chunk is null)
+            {
+                return null;
+            }
+
+            sb.Append(chunk);
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>删除分片计数与全部已知分片；不存在时静默忽略。</summary>
+    public void DeleteLarge(string key)
+    {
+        var countText = TryRead($"{key}{ChunkCountSuffix}");
+        if (countText is not null && int.TryParse(countText, out var count) && count > 0)
+        {
+            for (var i = 0; i < count; i++)
+            {
+                Delete($"{key}{ChunkCountSuffix}:{i}");
+            }
+        }
+
+        Delete($"{key}{ChunkCountSuffix}");
+    }
+
+    /// <summary>把字符串按字节预算切片，逐字符累加字节数、超预算就切一刀。Cookie/Token 类内容
+    /// 按 RFC 6265 基本是 ASCII，逐字符 GetByteCount 不构成性能问题（几 KB 级别的输入）。</summary>
+    private static List<string> SplitByByteBudget(string value, Encoding encoding, int maxBytesPerChunk)
+    {
+        var chunks = new List<string>();
+        if (value.Length == 0)
+        {
+            chunks.Add(string.Empty);
+            return chunks;
+        }
+
+        var current = new StringBuilder();
+        var currentBytes = 0;
+        foreach (var ch in value)
+        {
+            var chBytes = encoding.GetByteCount([ch]);
+            if (currentBytes + chBytes > maxBytesPerChunk && current.Length > 0)
+            {
+                chunks.Add(current.ToString());
+                current.Clear();
+                currentBytes = 0;
+            }
+
+            current.Append(ch);
+            currentBytes += chBytes;
+        }
+
+        if (current.Length > 0)
+        {
+            chunks.Add(current.ToString());
+        }
+
+        return chunks;
+    }
+
     private static void ZeroAndFree(IntPtr ptr, int length)
     {
         if (length > 0)

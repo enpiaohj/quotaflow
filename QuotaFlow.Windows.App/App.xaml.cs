@@ -169,9 +169,10 @@ public partial class App : Application
 
         // 阿里云百炼 Token Plan（个人版）——测试版本；凭据是 Console Cookie（+ 登录时抓的
         // SEC_TOKEN），只存 Windows 凭据管理器（SecureCredentialStore），与其它平台同规矩：
-        // 不落盘、不写日志。两者都是 ASCII 长值，用 UTF-8 存取以绕过凭据管理器 2560 字节上限。
+        // 不落盘、不写日志。Cookie 完整保留（不按域名精简）常年超过单条凭据 2560 字节上限，
+        // 走分片存储（TryReadLarge）；SEC_TOKEN 很短，仍是常规 UTF-8 单条存取。
         yield return new AlibabaTokenPlanQuotaProvider(_httpClient,
-            () => _credentialStore.TryRead(SettingsViewModel.TokenPlanCookieKeyName, useUtf8: true),
+            () => _credentialStore.TryReadLarge(SettingsViewModel.TokenPlanCookieKeyName),
             () => _credentialStore.TryRead(SettingsViewModel.TokenPlanSecTokenKeyName, useUtf8: true));
 
         // 设置页手动添加的自定义平台（OpenCode GO 等）。Id 固定为 custom-{n}，凭据键由此派生；
