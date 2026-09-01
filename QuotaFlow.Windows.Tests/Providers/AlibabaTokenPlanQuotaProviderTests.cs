@@ -177,4 +177,39 @@ public class AlibabaTokenPlanQuotaProviderTests
         Assert.Equal(ProviderState.NotConfigured, snapshot.State);
         Assert.Equal(ErrorCategory.NotConfigured, snapshot.ErrorCategory);
     }
+
+    // ---- LooksLikeLoginPage（判定拿到的控制台 HTML 是否其实是登录页而非正常已登录内容）----
+
+    [Fact]
+    public void LooksLikeLoginPage_ValidLoggedInPage_DoesNotFalsePositive()
+    {
+        // 实测事故回归：早期版本的判定关键词里有 "window.location" ——这是几乎任何现代前端
+        // bundle 都会出现的普通 JS 字符串，一个完全有效的登录态页面（真实抓包：243KB 正常内容，
+        // 含 CURRENT_PK）同样会命中它，被误判成"已失效"，把正常登录态错误地报成"请重新登录"。
+        var html = """
+            <html><body>
+            <script>
+              var ALIYUN_CONSOLE_CONFIG = { CURRENT_PK: "1234567890" };
+              function foo() { window.location.href = '/some/route'; }
+            </script>
+            </body></html>
+            """;
+
+        Assert.False(AlibabaTokenPlanQuotaProvider.LooksLikeLoginPage(html));
+    }
+
+    [Fact]
+    public void LooksLikeLoginPage_ActualLoginRedirect_DetectsCorrectly()
+    {
+        var html = """<html><body><script>window.location = "https://passport.aliyun.com/login.htm";</script></body></html>""";
+
+        Assert.True(AlibabaTokenPlanQuotaProvider.LooksLikeLoginPage(html));
+    }
+
+    [Fact]
+    public void LooksLikeLoginPage_ChinesePromptText_DetectsCorrectly()
+    {
+        Assert.True(AlibabaTokenPlanQuotaProvider.LooksLikeLoginPage("<div>敬请登录后查看</div>"));
+        Assert.True(AlibabaTokenPlanQuotaProvider.LooksLikeLoginPage("<div>登录后使用本功能</div>"));
+    }
 }

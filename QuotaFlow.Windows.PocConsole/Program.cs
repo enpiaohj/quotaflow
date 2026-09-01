@@ -239,6 +239,10 @@ static async Task<int> DiagTokenPlanHtmlAsync(SecureCredentialStore store)
     Console.WriteLine($"Contains '暂不支持移动端': {html.Contains("暂不支持移动端")}");
     Console.WriteLine($"Contains '请登录' or '登录后使用': {html.Contains("请登录") || html.Contains("登录后使用")}");
     Console.WriteLine($"Contains 'window.location': {html.Contains("window.location")}");
+    Console.WriteLine($"Contains 'passport.aliyun.com': {html.Contains("passport.aliyun.com", StringComparison.OrdinalIgnoreCase)}");
+    Console.WriteLine($"Contains '/login': {html.Contains("/login", StringComparison.OrdinalIgnoreCase)}");
+    Console.WriteLine($"Contains '敬请登录': {html.Contains("敬请登录")}");
+    Console.WriteLine($"Contains '登录后使用': {html.Contains("登录后使用")}");
 
     // 不打印 SEC_TOKEN 附近的原始文本（可能截到真实 token 片段）；只报告结构性判断：
     // 出现次数、以及是否匹配 Provider 里用的那个正则模式。

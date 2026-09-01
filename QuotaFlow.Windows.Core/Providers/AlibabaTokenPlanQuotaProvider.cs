@@ -44,8 +44,11 @@ public sealed class AlibabaTokenPlanQuotaProvider : IQuotaProvider
 
     private static readonly Regex SecTokenPattern = new(@"\bSEC_TOKEN\s*:\s*""([^""]+)""", RegexOptions.Compiled);
 
-    /// <summary>登录页特征：HTML 里如果出现这些字样，说明 Cookie 已失效、被重定向到了登录接口。</summary>
-    private static readonly string[] LoginPageSignals = ["passport.aliyun.com", "window.location", "/login", "敬请登录", "登录后使用"];
+    /// <summary>登录页特征：HTML 里如果出现这些字样，说明 Cookie 已失效、被重定向到了登录接口。
+    /// 注意：不能包含 "window.location" ——实测这是任何现代前端 bundle 里都极常见的普通 JS
+    /// 字符串，一个完全有效的登录态页面（243KB 的正常控制台内容，CURRENT_PK 存在）同样会命中，
+    /// 曾经导致把正常登录态误判成"已失效"、给用户展示错误的"请重新登录"提示。</summary>
+    private static readonly string[] LoginPageSignals = ["passport.aliyun.com", "敬请登录", "登录后使用"];
 
     /// <summary>表示 7 天周期"已使用比例"的字段名（1.0 = 全部用尽）。</summary>
     private const string FieldPercentage = "per1WeekPercentage";
@@ -458,7 +461,8 @@ public sealed class AlibabaTokenPlanQuotaProvider : IQuotaProvider
         || raw.Contains("error1.html", StringComparison.OrdinalIgnoreCase)
         || raw.Contains("error.html", StringComparison.OrdinalIgnoreCase);
 
-    private static bool LooksLikeLoginPage(string html)
+    /// <summary>内部方法便于单测直接验证误判/漏判场景，不依赖真实 HTTP 请求。</summary>
+    internal static bool LooksLikeLoginPage(string html)
     {
         // 登录页一般是返回 200 但内容是登录 SPA/重定向脚本；URL 或脚本特征能识别的就判失效。
         return LoginPageSignals.Any(s => html.Contains(s, StringComparison.OrdinalIgnoreCase));
