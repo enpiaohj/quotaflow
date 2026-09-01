@@ -1,0 +1,32 @@
+<Window x:Class="QuotaFlow.Windows.App.Views.AlibabaLoginWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="登录阿里云百炼" Width="900" Height="720" MinWidth="640" MinHeight="480"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResize"
+        Background="{DynamicResource Brush.Background}">
+
+    <DockPanel>
+        <!-- 顶部提示条：说明登录完成会自动关闭本窗口并开始查询额度 -->
+        <Border DockPanel.Dock="Top" Background="{DynamicResource Brush.Divider}" Padding="12,8">
+            <TextBlock Text="请在弹出的窗口中登录你的阿里云账号（百炼控制台）。登录成功后本窗口会自动关闭并开始查询 Token Plan 额度，无需手动复制任何内容。"
+                       FontSize="12" Foreground="{DynamicResource Brush.TextSecondary}" TextWrapping="Wrap" />
+        </Border>
+
+        <!-- 登录 WebView：登录态（Cookie）由本窗口在登录成功后自动抓取并安全保存 -->
+        <Grid>
+            <wv2:WebView2 x:Name="LoginWebView" />
+            <TextBlock x:Name="LoadingHint" Text="正在加载阿里云百炼控制台…"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       FontSize="13" Foreground="{DynamicResource Brush.TextTertiary}" />
+        </Grid>
+
+        <Border DockPanel.Dock="Bottom" Background="{DynamicResource Brush.Background}"
+                BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="0,1,0,0" Padding="12,8">
+            <StackPanel Orientation="Horizontal">
+                <Button x:Name="CancelButton" Content="取消" Style="{StaticResource Style.SecondaryButton}"
+                        Click="OnCancelClick" />
+            </StackPanel>
+        </Border>
+    </DockPanel>
+</Window>

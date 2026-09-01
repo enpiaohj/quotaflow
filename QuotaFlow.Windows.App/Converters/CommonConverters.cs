@@ -5,6 +5,16 @@ using Binding = System.Windows.Data.Binding;
 
 namespace QuotaFlow.Windows.App.Converters;
 
+/// <summary>bool 取反，用于 IsEnabled 这类需要"取反后作为布尔用"的场景。</summary>
+public sealed class InverseBooleanConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is not true;
+
+    public object ConvertBack(object value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is not true;
+}
+
 /// <summary>bool 取反后再转 Visibility，用于"没有余额的时候才显示额度窗口列表"这类互斥展示。</summary>
 public sealed class InverseBooleanToVisibilityConverter : IValueConverter
 {
