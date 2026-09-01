@@ -6,6 +6,7 @@ using Microsoft.Win32;
 using QuotaFlow.Windows.App.Services;
 using QuotaFlow.Windows.App.ViewModels;
 using QuotaFlow.Windows.App.Views;
+using QuotaFlow.Windows.Core.Models;
 using QuotaFlow.Windows.Core.Providers;
 using QuotaFlow.Windows.Core.Services;
 using Application = System.Windows.Application;
@@ -29,6 +30,9 @@ public partial class App : Application
     private SecureCredentialStore _credentialStore = null!;
     private LocalCache _cache = null!;
     private HttpClient _httpClient = null!;
+
+    /// <summary>当前生效的代理设置，由 <see cref="ConfigurableProxy"/> 每次请求时读取。</summary>
+    private (ProxyMode Mode, string? Address) _proxySettings;
     private System.Windows.Forms.Timer? _trayClickDebounceTimer;
     private bool _trayPendingSingleClick;
     private readonly GlobalHotkeyService _hotkeyService = new();
@@ -48,12 +52,24 @@ public partial class App : Application
             args.SetObserved();
         };
 
-        _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
         _credentialStore = new SecureCredentialStore();
         _cache = new LocalCache();
         _settingsStore = new AppSettingsStore();
 
         var settings = _settingsStore.Load();
+
+        // 代理走可配置实现：每次请求现查当前设置，所以在设置页切换后立即生效，不必重建
+        // HttpClient（重建会波及所有 Provider 持有的引用，还要处理在途请求与旧 handler 的释放）。
+        // _proxySettings 在设置保存时更新，见下方 SettingsSaved 处理。
+        _proxySettings = (settings.ProxyMode, settings.ProxyAddress);
+        var proxy = new ConfigurableProxy(() => _proxySettings);
+        _httpClient = new HttpClient(new HttpClientHandler { Proxy = proxy, UseProxy = true })
+        {
+            Timeout = TimeSpan.FromSeconds(20),
+        };
+
+        // 网络类错误提示带上实际使用的代理——代理配错时"请检查网络连接"会把人引向错误方向。
+        HttpErrorClassifier.ProxyDescriber = () => proxy.DescribeFor(new Uri("https://api.anthropic.com"));
         _themeManager.Apply(settings.Theme);
         SystemEvents.UserPreferenceChanged += OnSystemPreferenceChanged;
 
@@ -320,6 +336,8 @@ public partial class App : Application
         settingsViewModel.SettingsSaved += (_, newSettings) =>
         {
             _themeManager.Apply(newSettings.Theme);
+            // 代理设置立即生效：ConfigurableProxy 每次请求都读这个字段，无需重建 HttpClient。
+            _proxySettings = (newSettings.ProxyMode, newSettings.ProxyAddress);
             _panelViewModel?.UpdateSettings(newSettings);
             // 保存后立即刷新：改顺序、清除/新增 Key、开关键等立即反映到面板，不用等下一个自动刷新周期。
             _ = _panelViewModel?.RefreshAllAsync();

@@ -243,6 +243,31 @@
                 </StackPanel>
             </Border>
 
+            <!-- 网络代理 -->
+            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
+                <StackPanel>
+                    <TextBlock Text="网络代理" Style="{StaticResource SectionTitle}" />
+                    <StackPanel Orientation="Horizontal">
+                        <RadioButton GroupName="ProxyMode" Content="跟随系统"
+                                     AutomationProperties.AutomationId="ProxyModeRadio_System"
+                                     IsChecked="{Binding ProxyMode, Converter={StaticResource EnumEquals}, ConverterParameter=System}" />
+                        <RadioButton GroupName="ProxyMode" Content="直连"
+                                     AutomationProperties.AutomationId="ProxyModeRadio_Direct"
+                                     IsChecked="{Binding ProxyMode, Converter={StaticResource EnumEquals}, ConverterParameter=Direct}" />
+                        <RadioButton GroupName="ProxyMode" Content="自定义"
+                                     AutomationProperties.AutomationId="ProxyModeRadio_Custom"
+                                     IsChecked="{Binding ProxyMode, Converter={StaticResource EnumEquals}, ConverterParameter=Custom}" />
+                    </StackPanel>
+                    <TextBox Style="{StaticResource EndpointBox}"
+                             AutomationProperties.AutomationId="ProxyAddressBox"
+                             Visibility="{Binding CustomProxyVisibility}"
+                             Text="{Binding ProxyAddress, UpdateSourceTrigger=PropertyChanged}"
+                             ToolTip="例如 http://127.0.0.1:7890，也可只填 127.0.0.1:7890" />
+                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
+                               Text="「跟随系统」是默认行为：优先读 HTTP_PROXY / HTTPS_PROXY 环境变量，没有才用系统代理设置。若浏览器上网正常、本应用却所有平台都提示网络失败，多半是环境变量里残留了失效的代理地址——改成「直连」即可，保存后立即生效。" />
+                </StackPanel>
+            </Border>
+
             <!-- 启动 -->
             <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
                 <StackPanel>

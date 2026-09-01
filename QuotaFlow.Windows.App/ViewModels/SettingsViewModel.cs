@@ -53,6 +53,19 @@ public sealed partial class SettingsViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(EffectiveMiniMaxUrl))]
     private MiniMaxRegion _miniMaxRegion;
     [ObservableProperty] private bool _showUnknownWindows;
+
+    // ---- 网络代理 ----
+    // 存在的理由见 AppSettings.ProxyMode：.NET 默认优先读 HTTP_PROXY/HTTPS_PROXY 环境变量，
+    // 浏览器却只看系统代理设置，两者不一致时会出现"浏览器正常、本应用全部网络失败"。
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CustomProxyVisibility))]
+    private ProxyMode _proxyMode;
+
+    [ObservableProperty] private string _proxyAddress = string.Empty;
+
+    /// <summary>只有选了"自定义"才显示地址输入框。</summary>
+    public Visibility CustomProxyVisibility =>
+        ProxyMode == ProxyMode.Custom ? Visibility.Visible : Visibility.Collapsed;
     [ObservableProperty] private ClockDisplayFormat _clockDisplayFormat;
 
     // ---- 显示/隐藏面板全局快捷键（默认 Alt+Z）----
@@ -422,6 +435,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         _codexEndpointOverride = current.CodexEndpointOverride ?? string.Empty;
         _miniMaxEndpointOverride = current.MiniMaxEndpointOverride ?? string.Empty;
         _deepSeekEndpointOverride = current.DeepSeekEndpointOverride ?? string.Empty;
+        _proxyMode = current.ProxyMode;
+        _proxyAddress = current.ProxyAddress ?? string.Empty;
 
         // 隐藏名单里没有的平台就是显示（默认全部显示）。用 ?? [] 兜底手改配置写成 null 的情况。
         var hidden = new HashSet<string>(current.HiddenPlatforms ?? [], StringComparer.OrdinalIgnoreCase);
@@ -1034,6 +1049,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         settings.Theme = Theme;
         settings.MiniMaxRegion = MiniMaxRegion;
         settings.ShowUnknownWindows = ShowUnknownWindows;
+        settings.ProxyMode = ProxyMode;
+        settings.ProxyAddress = ToNullIfEmpty(ProxyAddress);
         settings.ClockDisplayFormat = ClockDisplayFormat;
         // 接口地址覆盖：空串转 null（= 用内置默认）。
         settings.ClaudeEndpointOverride = ToNullIfEmpty(ClaudeEndpointOverride);

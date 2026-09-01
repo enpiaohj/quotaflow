@@ -1,5 +1,18 @@
 namespace QuotaFlow.Windows.Core.Models;
 
+/// <summary>网络代理来源。</summary>
+public enum ProxyMode
+{
+    /// <summary>跟随系统：即 .NET 默认行为——先读 HTTP_PROXY/HTTPS_PROXY 环境变量，再回落到系统代理设置。</summary>
+    System,
+
+    /// <summary>直连：忽略一切代理配置。系统设置与环境变量不一致、或环境变量残留了失效代理时用这个。</summary>
+    Direct,
+
+    /// <summary>使用下面手工填写的代理地址。</summary>
+    Custom,
+}
+
 /// <summary>跟随系统 / 浅色 / 深色。</summary>
 public enum ThemeMode
 {
@@ -123,6 +136,20 @@ public sealed class AppSettings
     /// <c>?? []</c> 兜底，防手改配置出现 <c>hiddenPlatforms: null</c>。
     /// </summary>
     public string[]? HiddenPlatforms { get; set; }
+
+    /// <summary>
+    /// 网络代理来源。默认 <see cref="Core.Models.ProxyMode.System"/>，与改动前行为一致。
+    ///
+    /// 之所以需要这个开关：.NET 的 <c>HttpClient.DefaultProxy</c> <b>优先读
+    /// <c>HTTP_PROXY</c>/<c>HTTPS_PROXY</c> 环境变量</b>，没有才回落到系统（IE）代理设置；
+    /// 而浏览器和 .NET Framework 程序只看系统设置。两处不一致时（实测遇到过：系统设置里
+    /// 代理是关闭的，环境变量却残留着一个已经不存在的代理地址），浏览器一切正常，本应用却
+    /// 所有平台都报网络失败，且从表象上完全看不出跟代理有关。
+    /// </summary>
+    public ProxyMode ProxyMode { get; set; } = ProxyMode.System;
+
+    /// <summary>自定义代理地址（如 <c>http://127.0.0.1:7890</c>），仅 ProxyMode 为 Custom 时使用。</summary>
+    public string? ProxyAddress { get; set; }
 
     /// <summary>
     /// 用户在设置页手动添加的自定义平台定义列表。纯新增字段（默认空列表），不 bump schemaVersion；
