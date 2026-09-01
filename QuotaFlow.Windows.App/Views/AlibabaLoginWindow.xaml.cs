@@ -46,6 +46,7 @@ public partial class AlibabaLoginWindow : Window
     private bool _closedByUser;
     private bool _webViewReady;
     private bool _navigated;
+    private int _networkResponseCount;
 
     /// <summary>登录成功事件：携带抓取到的 Cookie 字符串 + 页面里提取到的 SEC_TOKEN（均为空
     /// 字符串表示未取到；仅内存传递，调用方负责安全存储）。</summary>
@@ -85,15 +86,22 @@ public partial class AlibabaLoginWindow : Window
             // XHR/fetch 响应体里的字段（不挂在 window 上、只存在于页面脚本的闭包变量里，
             // 外部 ExecuteScriptAsync 天然访问不到）。只记录"哪个 URL 的响应体里含有该字符串"
             // 这类结构性信息，不记录响应体内容本身。
+            Interlocked.Exchange(ref _networkResponseCount, 0);
             LoginWebView.CoreWebView2.WebResourceResponseReceived += async (_, args) =>
             {
+                Interlocked.Increment(ref _networkResponseCount);
                 try
                 {
                     var url = args.Request.Uri;
-                    // 只看 JSON/文本类响应，跳过图片/字体/脚本资源（脚本本身不含 token，只是逻辑）。
                     var contentType = args.Response.Headers.FirstOrDefault(h => h.Key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase)).Value ?? "";
-                    if (!contentType.Contains("json", StringComparison.OrdinalIgnoreCase) &&
-                        !contentType.Contains("text", StringComparison.OrdinalIgnoreCase))
+
+                    // 不再按 Content-Type 过滤——之前只看 json/text 会漏掉 application/javascript
+                    // 这类脚本响应，而 SEC_TOKEN 的生成逻辑很可能就内嵌在某个业务 JS 文件里。
+                    // 跳过明显的图片/字体二进制资源即可，其余一律检查响应体文本内容。
+                    if (contentType.Contains("image/", StringComparison.OrdinalIgnoreCase) ||
+                        contentType.Contains("font/", StringComparison.OrdinalIgnoreCase) ||
+                        contentType.Contains("audio/", StringComparison.OrdinalIgnoreCase) ||
+                        contentType.Contains("video/", StringComparison.OrdinalIgnoreCase))
                     {
                         return;
                     }
@@ -112,9 +120,17 @@ public partial class AlibabaLoginWindow : Window
                             $"[{DateTime.Now:HH:mm:ss}] Response body contains 'SEC_TOKEN': {url} (Content-Type: {contentType}, length: {body.Length})\n");
                     }
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    // 单次响应检查失败不影响其它响应/主流程。
+                    // 记录异常类型（不含内容），帮助判断是否 GetContentAsync 本身就失败了。
+                    try
+                    {
+                        File.AppendAllText(Path.Combine(Path.GetTempPath(), "quotaflow-tokenplan-network-diag.txt"),
+                            $"[{DateTime.Now:HH:mm:ss}] Probe failed for {args.Request.Uri}: {ex.GetType().Name}\n");
+                    }
+                    catch (Exception)
+                    {
+                    }
                 }
             };
 
@@ -381,6 +397,7 @@ public partial class AlibabaLoginWindow : Window
         var lines = new List<string>
         {
             $"[{DateTime.Now:HH:mm:ss}] Main frame URL: {LoginWebView.Source}",
+            $"Network responses observed so far: {Volatile.Read(ref _networkResponseCount)}",
         };
 
         const string probeJs = """
