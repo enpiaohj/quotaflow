@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:conv="clr-namespace:QuotaFlow.Windows.App.Converters"
         xmlns:vm="clr-namespace:QuotaFlow.Windows.App.ViewModels"
-        Title="QuotaFlow 设置" Width="440" Height="720" MinWidth="400" MinHeight="480"
+        Title="QuotaFlow 设置" Width="840" Height="660" MinWidth="720" MinHeight="520"
         Background="{DynamicResource Brush.Background}"
         WindowStartupLocation="CenterScreen" ResizeMode="CanResize">
 
@@ -68,6 +68,131 @@
             <!-- API Key 只会是 ASCII 字符，禁用输入法：既不需要中文候选框，也避免第三方 IME 钩子冲突。 -->
             <Setter Property="InputMethod.IsInputMethodEnabled" Value="False" />
         </Style>
+
+        <!-- ========== 左侧分类导航 ==========
+             用 TabControl(TabStripPlacement=Left) 而不是自建 ListBox + 可见性绑定：分类切换
+             属于纯视图状态，交给控件自身管理，ViewModel 不需要为"当前在哪一页"新增任何属性。 -->
+        <Style x:Key="Style.NavTabs" TargetType="TabControl">
+            <Setter Property="TabStripPlacement" Value="Left" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabControl">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="188" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border Background="{DynamicResource Brush.PanelBackground}"
+                                    BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="0,0,1,0">
+                                <TabPanel IsItemsHost="True" Margin="0,10" VerticalAlignment="Top" />
+                            </Border>
+                            <!-- 名字必须是 PART_SelectedContentHost：TabControl 按这个名字定位
+                                 内容宿主，改名或漏掉会导致左侧分类正常、右侧内容整片空白
+                                 （编译与 XAML 解析都不会报错）。 -->
+                            <ContentPresenter x:Name="PART_SelectedContentHost" Grid.Column="1"
+                                              ContentSource="SelectedContent" />
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="Style.NavItem" TargetType="TabItem">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="Bd" CornerRadius="6" Margin="8,1" Padding="12,9"
+                                Background="Transparent">
+                            <ContentPresenter x:Name="Label" ContentSource="Header" VerticalAlignment="Center"
+                                              TextElement.FontSize="13"
+                                              TextElement.Foreground="{DynamicResource Brush.TextSecondary}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Brush.HoverOverlay}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Brush.Divider}" />
+                                <Setter TargetName="Label" Property="TextElement.Foreground"
+                                        Value="{DynamicResource Brush.TextPrimary}" />
+                                <Setter TargetName="Label" Property="TextElement.FontWeight" Value="SemiBold" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 分类页标题：每页顶部一个大标题，替代原来每张卡片都重复一遍小标题。 -->
+        <Style x:Key="PageTitle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="18" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+            <Setter Property="Margin" Value="0,0,0,16" />
+        </Style>
+
+        <!-- ========== 可折叠区块 ==========
+             平台卡片默认收起，只露出"名称 + 状态"，展开才显示配置项。同一个模板也用于卡片内的
+             「高级」段（接口地址覆盖）。同样不需要 ViewModel 记录展开状态。 -->
+        <Style x:Key="Style.Collapsible" TargetType="Expander">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Expander">
+                        <StackPanel>
+                            <!-- 标题必须是 ToggleButton 并把 IsChecked 双向绑到 IsExpanded：
+                                 Expander 的展开行为完全来自模板里的这个 ToggleButton，只画一个
+                                 Border 是点不动的（编译能过、运行时静默失效），也不会暴露给
+                                 UI 自动化和键盘操作。 -->
+                            <ToggleButton Content="{TemplateBinding Header}" Cursor="Hand"
+                                          HorizontalContentAlignment="Stretch"
+                                          IsChecked="{Binding IsExpanded, Mode=TwoWay,
+                                                      RelativeSource={RelativeSource TemplatedParent}}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border Background="Transparent" Padding="0,3">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="16" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock x:Name="Chevron" Text="&#9656;" FontSize="12"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource Brush.TextTertiary}" />
+                                                <ContentPresenter Grid.Column="1" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="Chevron" Property="Text" Value="&#9662;" />
+                                            </Trigger>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Chevron" Property="Foreground"
+                                                        Value="{DynamicResource Brush.TextPrimary}" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <ContentPresenter x:Name="Body" Visibility="Collapsed" Margin="16,10,0,0" />
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsExpanded" Value="True">
+                                <Setter TargetName="Body" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 「高级」折叠段的标题文字，比平台名弱一级。 -->
+        <Style x:Key="AdvancedLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
     </Window.Resources>
 
     <DockPanel>
@@ -75,19 +200,31 @@
         <Border DockPanel.Dock="Bottom" Background="{DynamicResource Brush.Background}"
                 BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="0,1,0,0"
                 Padding="20,10">
-            <StackPanel>
-                <TextBlock Text="{Binding StatusMessage}" HorizontalAlignment="Center" Margin="0,0,0,8"
+            <!-- 状态文案在左、保存按钮在右：840px 宽度下按钮不再拉通整行。
+                 「显示与窗口」页是即时生效的，该页顶部已单独说明，这里不再重复。 -->
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" Margin="4,0,16,0"
                            AutomationProperties.AutomationId="StatusMessageText"
                            FontSize="12" Foreground="{DynamicResource Brush.AccentDeepSeek}"
                            TextWrapping="Wrap" />
-                <Button Content="保存设置" Style="{StaticResource Style.PrimaryButton}" HorizontalAlignment="Stretch"
+                <Button Grid.Column="1" Content="保存设置" Style="{StaticResource Style.PrimaryButton}"
+                        MinWidth="120"
                         AutomationProperties.AutomationId="SaveSettingsButton"
                         Command="{Binding SaveGeneralSettingsCommand}" />
-            </StackPanel>
+            </Grid>
         </Border>
 
-        <ScrollViewer Padding="20" VerticalScrollBarVisibility="Auto">
+        <TabControl Style="{StaticResource Style.NavTabs}" ItemContainerStyle="{StaticResource Style.NavItem}">
+
+        <!-- ==================== 常规 ==================== -->
+        <TabItem Header="常规">
+        <ScrollViewer Padding="24,20" VerticalScrollBarVisibility="Auto">
         <StackPanel>
+            <TextBlock Text="常规" Style="{StaticResource PageTitle}" />
 
             <!-- 刷新 -->
             <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
@@ -115,22 +252,15 @@
                 </StackPanel>
             </Border>
 
-            <!-- 快捷键 -->
-            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
-                <StackPanel>
-                    <TextBlock Text="快捷键" Style="{StaticResource SectionTitle}" />
-                    <CheckBox Content="启用显示/隐藏面板快捷键" IsChecked="{Binding HotkeyEnabled}" />
-                    <TextBlock Text="组合键" Style="{StaticResource FieldLabel}" Margin="0,10,0,0" />
-                    <TextBox x:Name="HotkeyCaptureBox" Style="{StaticResource EndpointBox}" IsReadOnly="True"
-                             Text="{Binding HotkeyDisplayText, Mode=OneWay}"
-                             AutomationProperties.AutomationId="HotkeyCaptureBox"
-                             Cursor="Hand" HorizontalContentAlignment="Center"
-                             ToolTip="点击后按下想要的组合键（至少包含一个 Alt/Ctrl/Shift/Win）"
-                             PreviewKeyDown="OnHotkeyCapturePreviewKeyDown" />
-                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
-                               Text="默认 Alt+Z。点击上面的框后直接按下新组合键即可修改，保存设置后生效；如果被其它程序占用会在保存后提示注册失败。" />
-                </StackPanel>
-            </Border>
+        </StackPanel>
+        </ScrollViewer>
+        </TabItem>
+
+        <!-- ==================== 外观 ==================== -->
+        <TabItem Header="外观">
+        <ScrollViewer Padding="24,20" VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+            <TextBlock Text="外观" Style="{StaticResource PageTitle}" />
 
             <!-- 外观 -->
             <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
@@ -156,90 +286,17 @@
                 </StackPanel>
             </Border>
 
-            <!-- 显示与窗口：这一整卡都是"改了立即生效"，不受下方"保存设置"按钮控制
-                 （跟托盘图标固定/已用剩余切换是同一类即时设置），所以卡片内没有重复的保存按钮。 -->
-            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
-                <StackPanel>
-                    <TextBlock Text="显示与窗口" Style="{StaticResource SectionTitle}" />
+        </StackPanel>
+        </ScrollViewer>
+        </TabItem>
 
-                    <TextBlock Text="显示模式" Style="{StaticResource FieldLabel}" />
-                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-                        <Button Content="托盘弹出" Style="{StaticResource Style.SecondaryButton}" Margin="0,0,8,0"
-                                AutomationProperties.AutomationId="EnterTrayModeButton"
-                                Command="{Binding EnterTrayModeCommand}" />
-                        <Button Content="悬浮窗口" Style="{StaticResource Style.SecondaryButton}" Margin="0,0,8,0"
-                                AutomationProperties.AutomationId="EnterFloatingModeButton"
-                                Command="{Binding EnterFloatingModeCommand}" />
-                        <Button Content="桌面看板" Style="{StaticResource Style.SecondaryButton}"
-                                AutomationProperties.AutomationId="EnterDesktopPanelModeButton"
-                                Command="{Binding EnterDesktopPanelModeCommand}" />
-                    </StackPanel>
-                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap">
-                        <Run Text="托盘弹出：点击托盘图标才出现，点外部自动收起（原有行为）。悬浮窗口/桌面看板：常驻显示、可拖动、点外部不收起，位置和大小按显示器分别记住。当前模式：" />
-                        <Run Text="{Binding WindowMode, Mode=OneWay}" FontWeight="SemiBold" />
-                    </TextBlock>
-
-                    <Border Height="1" Background="{DynamicResource Brush.Divider}" Margin="0,12,0,10" />
-
-                    <CheckBox Content="始终置顶" IsChecked="{Binding WindowAlwaysOnTop, Mode=TwoWay}"
-                              AutomationProperties.AutomationId="WindowAlwaysOnTopCheckBox" />
-                    <TextBlock Style="{StaticResource StatusLabel}" Margin="0,2,0,8" TextWrapping="Wrap"
-                               Text="仅对悬浮窗口/桌面看板生效；托盘弹出面板始终置顶，不受此项影响。" />
-
-                    <CheckBox Content="锁定位置（锁定后不能拖动）" IsChecked="{Binding WindowPositionLocked, Mode=TwoWay}"
-                               AutomationProperties.AutomationId="WindowPositionLockedCheckBox" Margin="0,0,0,8" />
-
-                    <CheckBox Content="紧凑布局" IsChecked="{Binding WindowCompactLayout, Mode=TwoWay}"
-                               AutomationProperties.AutomationId="WindowCompactLayoutCheckBox" Margin="0,0,0,2" />
-                    <TextBlock Style="{StaticResource StatusLabel}" Margin="0,0,0,8" TextWrapping="Wrap"
-                               Text="卡片内边距收窄，适合长期摆在桌面上、只需要一眼瞄一下额度的场景。" />
-
-                    <CheckBox Content="拖动时吸附屏幕边缘" IsChecked="{Binding WindowSnapToEdges, Mode=TwoWay}" Margin="0,0,0,8" />
-
-                    <CheckBox Content="启动后恢复上次使用的显示模式" IsChecked="{Binding WindowRestoreLastModeOnStartup, Mode=TwoWay}" Margin="0,0,0,8" />
-
-                    <CheckBox Content="悬停时临时提高不透明度（便于查看）" IsChecked="{Binding WindowEnhanceReadabilityOnHover, Mode=TwoWay}" Margin="0,0,0,10" />
-
-                    <Grid Margin="0,0,0,10">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="44" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel>
-                            <TextBlock Text="不透明度（悬浮窗口/桌面看板）" Style="{StaticResource FieldLabel}" />
-                            <Slider Minimum="0.7" Maximum="1.0" SmallChange="0.05" LargeChange="0.1"
-                                    IsSnapToTickEnabled="True" TickFrequency="0.05" Margin="0,6,0,0"
-                                    Value="{Binding WindowOpacity, Mode=TwoWay}" />
-                        </StackPanel>
-                        <TextBlock Grid.Column="1" VerticalAlignment="Bottom" HorizontalAlignment="Right"
-                                   Text="{Binding WindowOpacity, StringFormat={}{0:P0}}" FontSize="12"
-                                   Foreground="{DynamicResource Brush.TextSecondary}" />
-                    </Grid>
-
-                    <TextBlock Text="背景材质" Style="{StaticResource FieldLabel}" />
-                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-                        <RadioButton GroupName="WindowMaterial" Content="系统"
-                                     IsChecked="{Binding WindowMaterial, Converter={StaticResource EnumEquals}, ConverterParameter=System}" />
-                        <RadioButton GroupName="WindowMaterial" Content="云母"
-                                     IsChecked="{Binding WindowMaterial, Converter={StaticResource EnumEquals}, ConverterParameter=Mica}" />
-                        <RadioButton GroupName="WindowMaterial" Content="亚克力"
-                                     IsChecked="{Binding WindowMaterial, Converter={StaticResource EnumEquals}, ConverterParameter=Acrylic}" />
-                        <RadioButton GroupName="WindowMaterial" Content="纯色"
-                                     IsChecked="{Binding WindowMaterial, Converter={StaticResource EnumEquals}, ConverterParameter=Solid}" />
-                    </StackPanel>
-                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
-                               Text="面板采用无边框自绘窗口以实现圆角和阴影，与 Windows 真实的云母/亚克力合成效果存在架构性冲突（详见 README「已知风险」），云母/亚克力在此显示为对应色调的半透明背景近似，而非系统级材质渲染。" />
-                    <TextBlock Style="{StaticResource StatusLabel}" Foreground="{DynamicResource Brush.AccentDeepSeek}"
-                               Visibility="{Binding IsMaterialFullySupported, Converter={StaticResource InverseBoolToVis}}"
-                               Text="当前系统版本/会话不满足 DWM 系统材质要求（需 Windows 11 22621+，且非远程桌面、非高对比度），以下材质选项均按纯色近似渲染。" />
-
-                    <Button Content="恢复默认窗口位置" Style="{StaticResource Style.SecondaryButton}" Margin="0,10,0,0"
-                            HorizontalAlignment="Left"
-                            AutomationProperties.AutomationId="RestoreDefaultWindowPositionButton"
-                            Command="{Binding RestoreDefaultWindowPositionCommand}"
-                            ToolTip="把当前模式（悬浮窗口/桌面看板）的位置和大小重置为推荐默认值" />
-                </StackPanel>
-            </Border>
+        <!-- ==================== 平台与账号 ==================== -->
+        <TabItem Header="平台与账号">
+        <ScrollViewer Padding="24,20" VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+            <TextBlock Text="平台与账号" Style="{StaticResource PageTitle}" />
+            <TextBlock Style="{StaticResource StatusLabel}" Margin="0,-10,0,14" TextWrapping="Wrap"
+                       Text="点击平台名称展开配置。密钥与登录态只保存在 Windows 凭据管理器，不写入配置文件、日志或缓存。" />
 
             <!-- 额度窗口显示 -->
             <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
@@ -252,67 +309,100 @@
             </Border>
 
             <!-- Claude -->
-            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
-                <StackPanel>
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="Claude" Style="{StaticResource SectionTitle}" />
-                        <Button Grid.Column="1" Content="重新检测" Style="{StaticResource Style.SecondaryButton}"
+            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,10">
+                <Expander Style="{StaticResource Style.Collapsible}">
+                    <Expander.Header>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Claude" FontSize="13" FontWeight="SemiBold"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource Brush.TextPrimary}" />
+                            <TextBlock Grid.Column="1" Text="{Binding ClaudeLoginStatusText}" FontSize="12"
+                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                       Foreground="{DynamicResource Brush.TextSecondary}" />
+                        </Grid>
+                    </Expander.Header>
+                    <StackPanel>
+                        <TextBlock Text="不提供密码输入框——请直接使用 Claude Code CLI 完成登录。"
+                                   Style="{StaticResource StatusLabel}" Margin="0,0,0,0" TextWrapping="Wrap" />
+                        <Button Content="重新检测登录状态" Style="{StaticResource Style.SecondaryButton}"
+                                HorizontalAlignment="Left" Margin="0,10,0,0"
                                 Command="{Binding RefreshLoginStatusCommand}" />
-                    </Grid>
-                    <TextBlock Text="{Binding ClaudeLoginStatusText}" TextWrapping="Wrap"
-                               FontSize="12" Foreground="{DynamicResource Brush.TextPrimary}" Margin="0,4,0,0" />
-                    <TextBlock Text="不提供密码输入框——请直接使用 Claude Code CLI 完成登录。"
-                               Style="{StaticResource StatusLabel}" TextWrapping="Wrap" />
-                    <TextBlock Text="接口地址（可选）" Style="{StaticResource FieldLabel}" Margin="0,10,0,0" />
-                    <TextBox Style="{StaticResource EndpointBox}" Text="{Binding ClaudeEndpointOverride}" />
-                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
-                               Text="{Binding EffectiveClaudeUrl, StringFormat=当前使用：{0}}" />
-                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
-                               Text="留空使用内置默认地址，仅地址变更时填写。保存设置后立即生效。" />
-                </StackPanel>
+                        <Expander Style="{StaticResource Style.Collapsible}" Margin="0,12,0,0">
+                            <Expander.Header>
+                                <TextBlock Text="高级" Style="{StaticResource AdvancedLabel}" />
+                            </Expander.Header>
+                            <StackPanel>
+                                <TextBlock Text="接口地址（留空使用默认）" Style="{StaticResource FieldLabel}" />
+                                <TextBox Style="{StaticResource EndpointBox}" Text="{Binding ClaudeEndpointOverride}" />
+                                <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
+                                           Text="{Binding EffectiveClaudeUrl, StringFormat=当前使用：{0}}" />
+                            </StackPanel>
+                        </Expander>
+                    </StackPanel>
+                </Expander>
             </Border>
 
             <!-- Codex -->
-            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
-                <StackPanel>
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="Codex" Style="{StaticResource SectionTitle}" />
-                        <Button Grid.Column="1" Content="重新检测" Style="{StaticResource Style.SecondaryButton}"
+            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,10">
+                <Expander Style="{StaticResource Style.Collapsible}">
+                    <Expander.Header>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Codex" FontSize="13" FontWeight="SemiBold"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource Brush.TextPrimary}" />
+                            <TextBlock Grid.Column="1" Text="{Binding CodexLoginStatusText}" FontSize="12"
+                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                       Foreground="{DynamicResource Brush.TextSecondary}" />
+                        </Grid>
+                    </Expander.Header>
+                    <StackPanel>
+                        <TextBlock Text="不提供密码输入框——请直接使用 Codex CLI 完成登录。"
+                                   Style="{StaticResource StatusLabel}" Margin="0,0,0,0" TextWrapping="Wrap" />
+                        <Button Content="重新检测登录状态" Style="{StaticResource Style.SecondaryButton}"
+                                HorizontalAlignment="Left" Margin="0,10,0,0"
                                 Command="{Binding RefreshLoginStatusCommand}" />
-                    </Grid>
-                    <TextBlock Text="{Binding CodexLoginStatusText}" TextWrapping="Wrap"
-                               FontSize="12" Foreground="{DynamicResource Brush.TextPrimary}" Margin="0,4,0,0" />
-                    <TextBlock Text="不提供密码输入框——请直接使用 Codex CLI 完成登录。"
-                               Style="{StaticResource StatusLabel}" TextWrapping="Wrap" />
-                    <TextBlock Text="接口地址（可选）" Style="{StaticResource FieldLabel}" Margin="0,10,0,0" />
-                    <TextBox Style="{StaticResource EndpointBox}" Text="{Binding CodexEndpointOverride}" />
-                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
-                               Text="{Binding EffectiveCodexUrl, StringFormat=当前使用：{0}}" />
-                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
-                               Text="留空使用内置默认地址，仅地址变更时填写。保存设置后立即生效。" />
-                </StackPanel>
+                        <Expander Style="{StaticResource Style.Collapsible}" Margin="0,12,0,0">
+                            <Expander.Header>
+                                <TextBlock Text="高级" Style="{StaticResource AdvancedLabel}" />
+                            </Expander.Header>
+                            <StackPanel>
+                                <TextBlock Text="接口地址（留空使用默认）" Style="{StaticResource FieldLabel}" />
+                                <TextBox Style="{StaticResource EndpointBox}" Text="{Binding CodexEndpointOverride}" />
+                                <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
+                                           Text="{Binding EffectiveCodexUrl, StringFormat=当前使用：{0}}" />
+                            </StackPanel>
+                        </Expander>
+                    </StackPanel>
+                </Expander>
             </Border>
 
             <!-- MiniMax -->
-            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
-                <StackPanel>
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="MiniMax" Style="{StaticResource SectionTitle}" />
-                        <TextBlock Grid.Column="1" Text="{Binding MiniMaxConfiguredText}" FontSize="12"
-                                   Foreground="{DynamicResource Brush.TextSecondary}" />
-                    </Grid>
+            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,10">
+                <Expander Style="{StaticResource Style.Collapsible}">
+                    <Expander.Header>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="MiniMax" FontSize="13" FontWeight="SemiBold"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource Brush.TextPrimary}" />
+                            <TextBlock Grid.Column="1" Text="{Binding MiniMaxConfiguredText}" FontSize="12"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource Brush.TextSecondary}" />
+                        </Grid>
+                    </Expander.Header>
+                    <StackPanel>
+                    <TextBlock Text="区域" Style="{StaticResource FieldLabel}" Margin="0,0,0,6" />
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                         <RadioButton GroupName="MiniMaxRegion" Content="国内站"
                                      IsChecked="{Binding MiniMaxRegion, Converter={StaticResource EnumEquals}, ConverterParameter=China}" />
@@ -339,28 +429,39 @@
                                 Command="{Binding ClearMiniMaxKeyCommand}" />
                     </StackPanel>
 
-                    <TextBlock Text="接口地址（可选）" Style="{StaticResource FieldLabel}" Margin="0,12,0,0" />
-                    <TextBox Style="{StaticResource EndpointBox}" Text="{Binding MiniMaxEndpointOverride}" />
-                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
-                               Text="{Binding EffectiveMiniMaxUrl, StringFormat=当前使用：{0}}" />
-                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
-                               Text="留空使用内置默认地址，仅地址变更时填写。保存设置后立即生效。" />
-                </StackPanel>
+                    <Expander Style="{StaticResource Style.Collapsible}" Margin="0,12,0,0">
+                        <Expander.Header>
+                            <TextBlock Text="高级" Style="{StaticResource AdvancedLabel}" />
+                        </Expander.Header>
+                        <StackPanel>
+                            <TextBlock Text="接口地址（留空使用默认）" Style="{StaticResource FieldLabel}" />
+                            <TextBox Style="{StaticResource EndpointBox}" Text="{Binding MiniMaxEndpointOverride}" />
+                            <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
+                                       Text="{Binding EffectiveMiniMaxUrl, StringFormat=当前使用：{0}}" />
+                        </StackPanel>
+                    </Expander>
+                    </StackPanel>
+                </Expander>
             </Border>
 
             <!-- DeepSeek -->
-            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
-                <StackPanel>
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="DeepSeek" Style="{StaticResource SectionTitle}" />
-                        <TextBlock Grid.Column="1" Text="{Binding DeepSeekConfiguredText}" FontSize="12"
-                                   Foreground="{DynamicResource Brush.TextSecondary}" />
-                    </Grid>
-
+            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,10">
+                <Expander Style="{StaticResource Style.Collapsible}">
+                    <Expander.Header>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="DeepSeek" FontSize="13" FontWeight="SemiBold"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource Brush.TextPrimary}" />
+                            <TextBlock Grid.Column="1" Text="{Binding DeepSeekConfiguredText}" FontSize="12"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource Brush.TextSecondary}" />
+                        </Grid>
+                    </Expander.Header>
+                    <StackPanel>
                     <!-- 统一 API Key 输入：未配置可直接输入；已配置默认掩码只读，点眼睛验证后显示明文并可编辑 -->
                     <Grid Margin="0,8,0,0">
                         <TextBox Style="{StaticResource SecretInputBox}"
@@ -380,34 +481,42 @@
                                 Command="{Binding ClearDeepSeekKeyCommand}" />
                     </StackPanel>
 
-                    <TextBlock Text="接口地址（可选）" Style="{StaticResource FieldLabel}" Margin="0,12,0,0" />
-                    <TextBox Style="{StaticResource EndpointBox}" Text="{Binding DeepSeekEndpointOverride}" />
-                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
-                               Text="{Binding EffectiveDeepSeekUrl, StringFormat=当前使用：{0}}" />
-                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
-                               Text="留空使用内置默认地址，仅地址变更时填写。保存设置后立即生效。" />
-                </StackPanel>
+                    <Expander Style="{StaticResource Style.Collapsible}" Margin="0,12,0,0">
+                        <Expander.Header>
+                            <TextBlock Text="高级" Style="{StaticResource AdvancedLabel}" />
+                        </Expander.Header>
+                        <StackPanel>
+                            <TextBlock Text="接口地址（留空使用默认）" Style="{StaticResource FieldLabel}" />
+                            <TextBox Style="{StaticResource EndpointBox}" Text="{Binding DeepSeekEndpointOverride}" />
+                            <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
+                                       Text="{Binding EffectiveDeepSeekUrl, StringFormat=当前使用：{0}}" />
+                        </StackPanel>
+                    </Expander>
+                    </StackPanel>
+                </Expander>
             </Border>
 
             <!-- 阿里云百炼 Token Plan（个人版）：WebView2 一键登录 -->
-            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
-                <StackPanel>
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="阿里云百炼 Token Plan" Style="{StaticResource SectionTitle}" />
-                        <TextBlock Grid.Column="1" FontSize="12"
-                                   Foreground="{DynamicResource Brush.TextTertiary}">
-                            <Run Text="登录状态：" />
-                            <Run Text="{Binding TokenPlanConfiguredText, Mode=OneWay}" FontWeight="SemiBold" />
-                            <Run Text=" · 区域：" />
-                            <Run Text="cn-beijing" FontFamily="Consolas" />
-                        </TextBlock>
-                    </Grid>
-
-                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
+            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,10">
+                <Expander Style="{StaticResource Style.Collapsible}">
+                    <Expander.Header>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="阿里云百炼 Token Plan" FontSize="13" FontWeight="SemiBold"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource Brush.TextPrimary}" />
+                            <TextBlock Grid.Column="1" FontSize="12" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource Brush.TextSecondary}">
+                                <Run Text="{Binding TokenPlanConfiguredText, Mode=OneWay}" />
+                                <Run Text=" · cn-beijing" FontFamily="Consolas" />
+                            </TextBlock>
+                        </Grid>
+                    </Expander.Header>
+                    <StackPanel>
+                    <TextBlock Style="{StaticResource StatusLabel}" Margin="0,0,0,0" TextWrapping="Wrap"
                                Text="点击「一键登录」会在内置浏览器窗口中登录阿里云百炼。登录成功后自动保存登录态并查询 Token Plan 个人版 7 天使用率与重置时间，无需手工复制任何内容。登录态安全存入 Windows 凭据管理器，不落盘、不写日志。" />
                     <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                         <Button Content="一键登录" Style="{StaticResource Style.PrimaryButton}" Margin="0,0,8,0"
@@ -421,7 +530,8 @@
                     </StackPanel>
                     <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
                                Text="登录态失效后卡片会显示「需要重新登录」，回到这里点「一键登录」即可，无需重填任何信息。" />
-                </StackPanel>
+                    </StackPanel>
+                </Expander>
             </Border>
 
             <!-- 自定义平台 -->
@@ -656,10 +766,138 @@
                 </StackPanel>
             </Border>
 
+        </StackPanel>
+        </ScrollViewer>
+        </TabItem>
+        <!-- ==================== 显示与窗口 ==================== -->
+        <TabItem Header="显示与窗口">
+        <ScrollViewer Padding="24,20" VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+            <TextBlock Text="显示与窗口" Style="{StaticResource PageTitle}" />
+            <TextBlock Style="{StaticResource StatusLabel}" Margin="0,-10,0,14" TextWrapping="Wrap"
+                       Text="本页所有设置均即时生效，不需要点底部的「保存设置」。" />
+
+            <!-- 显示与窗口：这一整卡都是"改了立即生效"，不受下方"保存设置"按钮控制
+                 （跟托盘图标固定/已用剩余切换是同一类即时设置），所以卡片内没有重复的保存按钮。 -->
+            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
+                <StackPanel>
+
+                    <TextBlock Text="显示模式" Style="{StaticResource FieldLabel}" />
+                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                        <Button Content="托盘弹出" Style="{StaticResource Style.SecondaryButton}" Margin="0,0,8,0"
+                                AutomationProperties.AutomationId="EnterTrayModeButton"
+                                Command="{Binding EnterTrayModeCommand}" />
+                        <Button Content="悬浮窗口" Style="{StaticResource Style.SecondaryButton}" Margin="0,0,8,0"
+                                AutomationProperties.AutomationId="EnterFloatingModeButton"
+                                Command="{Binding EnterFloatingModeCommand}" />
+                        <Button Content="桌面看板" Style="{StaticResource Style.SecondaryButton}"
+                                AutomationProperties.AutomationId="EnterDesktopPanelModeButton"
+                                Command="{Binding EnterDesktopPanelModeCommand}" />
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap">
+                        <Run Text="托盘弹出：点击托盘图标才出现，点外部自动收起（原有行为）。悬浮窗口/桌面看板：常驻显示、可拖动、点外部不收起，位置和大小按显示器分别记住。当前模式：" />
+                        <Run Text="{Binding WindowMode, Mode=OneWay}" FontWeight="SemiBold" />
+                    </TextBlock>
+
+                    <Border Height="1" Background="{DynamicResource Brush.Divider}" Margin="0,12,0,10" />
+
+                    <CheckBox Content="始终置顶" IsChecked="{Binding WindowAlwaysOnTop, Mode=TwoWay}"
+                              AutomationProperties.AutomationId="WindowAlwaysOnTopCheckBox" />
+                    <TextBlock Style="{StaticResource StatusLabel}" Margin="0,2,0,8" TextWrapping="Wrap"
+                               Text="仅对悬浮窗口/桌面看板生效；托盘弹出面板始终置顶，不受此项影响。" />
+
+                    <CheckBox Content="锁定位置（锁定后不能拖动）" IsChecked="{Binding WindowPositionLocked, Mode=TwoWay}"
+                               AutomationProperties.AutomationId="WindowPositionLockedCheckBox" Margin="0,0,0,8" />
+
+                    <CheckBox Content="紧凑布局" IsChecked="{Binding WindowCompactLayout, Mode=TwoWay}"
+                               AutomationProperties.AutomationId="WindowCompactLayoutCheckBox" Margin="0,0,0,2" />
+                    <TextBlock Style="{StaticResource StatusLabel}" Margin="0,0,0,8" TextWrapping="Wrap"
+                               Text="卡片内边距收窄，适合长期摆在桌面上、只需要一眼瞄一下额度的场景。" />
+
+                    <CheckBox Content="拖动时吸附屏幕边缘" IsChecked="{Binding WindowSnapToEdges, Mode=TwoWay}" Margin="0,0,0,8" />
+
+                    <CheckBox Content="启动后恢复上次使用的显示模式" IsChecked="{Binding WindowRestoreLastModeOnStartup, Mode=TwoWay}" Margin="0,0,0,8" />
+
+                    <CheckBox Content="悬停时临时提高不透明度（便于查看）" IsChecked="{Binding WindowEnhanceReadabilityOnHover, Mode=TwoWay}" Margin="0,0,0,10" />
+
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="44" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="不透明度（悬浮窗口/桌面看板）" Style="{StaticResource FieldLabel}" />
+                            <Slider Minimum="0.7" Maximum="1.0" SmallChange="0.05" LargeChange="0.1"
+                                    IsSnapToTickEnabled="True" TickFrequency="0.05" Margin="0,6,0,0"
+                                    Value="{Binding WindowOpacity, Mode=TwoWay}" />
+                        </StackPanel>
+                        <TextBlock Grid.Column="1" VerticalAlignment="Bottom" HorizontalAlignment="Right"
+                                   Text="{Binding WindowOpacity, StringFormat={}{0:P0}}" FontSize="12"
+                                   Foreground="{DynamicResource Brush.TextSecondary}" />
+                    </Grid>
+
+                    <TextBlock Text="背景材质" Style="{StaticResource FieldLabel}" />
+                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                        <RadioButton GroupName="WindowMaterial" Content="系统"
+                                     IsChecked="{Binding WindowMaterial, Converter={StaticResource EnumEquals}, ConverterParameter=System}" />
+                        <RadioButton GroupName="WindowMaterial" Content="云母"
+                                     IsChecked="{Binding WindowMaterial, Converter={StaticResource EnumEquals}, ConverterParameter=Mica}" />
+                        <RadioButton GroupName="WindowMaterial" Content="亚克力"
+                                     IsChecked="{Binding WindowMaterial, Converter={StaticResource EnumEquals}, ConverterParameter=Acrylic}" />
+                        <RadioButton GroupName="WindowMaterial" Content="纯色"
+                                     IsChecked="{Binding WindowMaterial, Converter={StaticResource EnumEquals}, ConverterParameter=Solid}" />
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
+                               Text="面板采用无边框自绘窗口以实现圆角和阴影，与 Windows 真实的云母/亚克力合成效果存在架构性冲突（详见 README「已知风险」），云母/亚克力在此显示为对应色调的半透明背景近似，而非系统级材质渲染。" />
+                    <TextBlock Style="{StaticResource StatusLabel}" Foreground="{DynamicResource Brush.AccentDeepSeek}"
+                               Visibility="{Binding IsMaterialFullySupported, Converter={StaticResource InverseBoolToVis}}"
+                               Text="当前系统版本/会话不满足 DWM 系统材质要求（需 Windows 11 22621+，且非远程桌面、非高对比度），以下材质选项均按纯色近似渲染。" />
+
+                    <Button Content="恢复默认窗口位置" Style="{StaticResource Style.SecondaryButton}" Margin="0,10,0,0"
+                            HorizontalAlignment="Left"
+                            AutomationProperties.AutomationId="RestoreDefaultWindowPositionButton"
+                            Command="{Binding RestoreDefaultWindowPositionCommand}"
+                            ToolTip="把当前模式（悬浮窗口/桌面看板）的位置和大小重置为推荐默认值" />
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+        </ScrollViewer>
+        </TabItem>
+
+        <!-- ==================== 快捷键 ==================== -->
+        <TabItem Header="快捷键">
+        <ScrollViewer Padding="24,20" VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+            <TextBlock Text="快捷键" Style="{StaticResource PageTitle}" />
+
+            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
+                <StackPanel>
+                    <CheckBox Content="启用显示/隐藏面板快捷键" IsChecked="{Binding HotkeyEnabled}" />
+                    <TextBlock Text="组合键" Style="{StaticResource FieldLabel}" Margin="0,10,0,0" />
+                    <TextBox x:Name="HotkeyCaptureBox" Style="{StaticResource EndpointBox}" IsReadOnly="True"
+                             Text="{Binding HotkeyDisplayText, Mode=OneWay}"
+                             AutomationProperties.AutomationId="HotkeyCaptureBox"
+                             Cursor="Hand" HorizontalContentAlignment="Center"
+                             ToolTip="点击后按下想要的组合键（至少包含一个 Alt/Ctrl/Shift/Win）"
+                             PreviewKeyDown="OnHotkeyCapturePreviewKeyDown" />
+                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
+                               Text="默认 Alt+Z。点击上面的框后直接按下新组合键即可修改，保存设置后生效；如果被其它程序占用会在保存后提示注册失败。" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+        </ScrollViewer>
+        </TabItem>
+
+        <!-- ==================== 数据与隐私 ==================== -->
+        <TabItem Header="数据与隐私">
+        <ScrollViewer Padding="24,20" VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+            <TextBlock Text="数据与隐私" Style="{StaticResource PageTitle}" />
+
             <!-- 数据与隐私 -->
             <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
                 <StackPanel>
-                    <TextBlock Text="数据与隐私" Style="{StaticResource SectionTitle}" />
                     <Button Content="清除本地缓存" Style="{StaticResource Style.SecondaryButton}" HorizontalAlignment="Left"
                             Command="{Binding ClearCacheCommand}" />
                     <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
@@ -667,18 +905,28 @@
                 </StackPanel>
             </Border>
 
-            <!-- 关于 -->
+        </StackPanel>
+        </ScrollViewer>
+        </TabItem>
+
+        <!-- ==================== 关于 ==================== -->
+        <TabItem Header="关于">
+        <ScrollViewer Padding="24,20" VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+            <TextBlock Text="关于" Style="{StaticResource PageTitle}" />
+
             <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
                 <StackPanel>
-                    <TextBlock Text="关于" Style="{StaticResource SectionTitle}" />
                     <TextBlock FontSize="12" Foreground="{DynamicResource Brush.TextPrimary}"
                                Text="{Binding AppVersionText}" Margin="0,0,0,4" />
                     <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
                                Text="Claude/Codex/MiniMax 额度查询的接口路径参考了 cc-switch（MIT License，https://github.com/farion1231/cc-switch）并结合本机实测确认。详见项目 README 的“已知风险与致谢”一节。" />
                 </StackPanel>
             </Border>
-
         </StackPanel>
         </ScrollViewer>
+        </TabItem>
+
+        </TabControl>
     </DockPanel>
 </Window>
