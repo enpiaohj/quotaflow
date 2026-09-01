@@ -388,6 +388,46 @@
                 </StackPanel>
             </Border>
 
+            <!-- 阿里云百炼 Token Plan（个人版）——测试版本 -->
+            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="阿里云百炼 Token Plan（测试）" Style="{StaticResource SectionTitle}" />
+                        <TextBlock Grid.Column="1" FontSize="12"
+                                   Foreground="{DynamicResource Brush.TextTertiary}">
+                            <Run Text="区域：" /><Run Text="cn-beijing" FontFamily="Consolas" />
+                        </TextBlock>
+                    </Grid>
+
+                    <!-- Console Cookie 输入：与 API Key 同套路，掩码 + 眼睛 + 身份验证 -->
+                    <Grid Margin="0,8,0,0">
+                        <TextBox Style="{StaticResource SecretInputBox}"
+                                 Text="{Binding TokenPlanCookieDisplayText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 IsReadOnly="{Binding TokenPlanCookieIsReadOnly}"
+                                 ToolTip="在百炼控制台登录状态下，从浏览器复制完整 Cookie 字符串（含所有分号分隔的键值对）" />
+                        <Button Style="{StaticResource EyeButton}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                Margin="0,0,4,0" Content="&#128065;" Visibility="{Binding TokenPlanEyeVisibility}"
+                                Command="{Binding ToggleRevealTokenPlanCookieCommand}"
+                                AutomationProperties.AutomationId="TokenPlanRevealCookieButton"
+                                ToolTip="验证身份后查看明文 Cookie" />
+                    </Grid>
+                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
+                               Text="测试阶段的内部接口验证用凭据。Cookie 只写入 Windows 凭据管理器（与 API Key 同等加密），不落盘、不写日志；面板卡片会显示 7 天已用/剩余额度及 Cookie 是否有效。" />
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <Button Content="保存 Cookie" Style="{StaticResource Style.PrimaryButton}" Margin="0,0,8,0"
+                                AutomationProperties.AutomationId="SaveTokenPlanCookieButton"
+                                Command="{Binding SaveTokenPlanCookieCommand}" />
+                        <Button Content="清除 Cookie" Style="{StaticResource Style.SecondaryButton}"
+                                AutomationProperties.AutomationId="ClearTokenPlanCookieButton"
+                                Command="{Binding ClearTokenPlanCookieCommand}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
             <!-- 自定义平台 -->
             <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
                 <StackPanel>

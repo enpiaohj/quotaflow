@@ -492,6 +492,7 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
         "codex" => "Codex",
         "minimax" => "MiniMax",
         "deepseek" => "DeepSeek",
+        "alibaba-tokenplan" => "Alibaba Token Plan",
         _ => (_settings.CustomPlatforms ?? []).FirstOrDefault(p => p.Id == providerId)?.Name ?? providerId,
     };
 

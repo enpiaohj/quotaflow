@@ -23,6 +23,10 @@ public sealed partial class SettingsViewModel : ObservableObject
     public const string MiniMaxKeyName = "minimax:ApiKey";
     public const string DeepSeekKeyName = "deepseek:ApiKey";
 
+    /// <summary>阿里云百炼 Token Plan（个人版）Console Cookie 的凭据管理器键名——与 API Key 同等
+    /// 敏感度，只走 <see cref="SecureCredentialStore"/>（Windows 凭据管理器），绝不落盘/写日志。</summary>
+    public const string TokenPlanCookieKeyName = "alibaba:tokenplan:consoleCookie";
+
     private readonly AppSettingsStore _settingsStore;
     private readonly SecureCredentialStore _credentialStore;
     private readonly LocalCache _cache;
@@ -268,6 +272,24 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public Visibility DeepSeekEyeVisibility => IsDeepSeekConfigured ? Visibility.Visible : Visibility.Collapsed;
 
+    // ---- 阿里云百炼 Token Plan（个人版）Console Cookie ----
+    // 与 API Key 同套路：未配置可直接输入 → 已配置默认掩码只读 → 眼睛 + 身份验证后才展示明文。
+    // Cookie 只写 Windows 凭据管理器（SecureCredentialStore），清空明文后不落任何普通文件。
+
+    [ObservableProperty] private bool _isTokenPlanConfigured;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TokenPlanCookieDisplayText))]
+    [NotifyPropertyChangedFor(nameof(TokenPlanCookieIsReadOnly))]
+    [NotifyPropertyChangedFor(nameof(TokenPlanEyeVisibility))]
+    private bool _isTokenPlanCookieRevealed;
+
+    [ObservableProperty] private string _tokenPlanCookieDisplayText = string.Empty;
+
+    public bool TokenPlanCookieIsReadOnly => IsTokenPlanConfigured && !IsTokenPlanCookieRevealed;
+
+    public Visibility TokenPlanEyeVisibility => IsTokenPlanConfigured ? Visibility.Visible : Visibility.Collapsed;
+
     // ---- 当前生效的接口地址（供设置页各平台分组实时展示；仅展示，不参与查询逻辑）----
 
     /// <summary>Claude 当前生效的用量接口地址：已填覆盖值则用之，否则为内置默认。</summary>
@@ -320,11 +342,14 @@ public sealed partial class SettingsViewModel : ObservableObject
     public IRelayCommand SaveDeepSeekKeyCommand { get; }
     public IRelayCommand ClearMiniMaxKeyCommand { get; }
     public IRelayCommand ClearDeepSeekKeyCommand { get; }
+    public IRelayCommand SaveTokenPlanCookieCommand { get; }
+    public IRelayCommand ClearTokenPlanCookieCommand { get; }
     public IRelayCommand ClearCacheCommand { get; }
     public IRelayCommand RefreshLoginStatusCommand { get; }
     public IRelayCommand SaveGeneralSettingsCommand { get; }
     public IAsyncRelayCommand ToggleRevealMiniMaxKeyCommand { get; }
     public IAsyncRelayCommand ToggleRevealDeepSeekKeyCommand { get; }
+    public IAsyncRelayCommand ToggleRevealTokenPlanCookieCommand { get; }
 
     public SettingsViewModel(AppSettingsStore settingsStore, SecureCredentialStore credentialStore, LocalCache cache,
         AppSettings current, IWindowPresentationCoordinator presentation,
@@ -376,11 +401,14 @@ public sealed partial class SettingsViewModel : ObservableObject
         SaveDeepSeekKeyCommand = new RelayCommand(SaveDeepSeekKey);
         ClearMiniMaxKeyCommand = new RelayCommand(ClearMiniMaxKey);
         ClearDeepSeekKeyCommand = new RelayCommand(ClearDeepSeekKey);
+        SaveTokenPlanCookieCommand = new RelayCommand(SaveTokenPlanCookie);
+        ClearTokenPlanCookieCommand = new RelayCommand(ClearTokenPlanCookie);
         ClearCacheCommand = new RelayCommand(ClearCache);
         RefreshLoginStatusCommand = new RelayCommand(RefreshLoginStatus);
         SaveGeneralSettingsCommand = new RelayCommand(SaveGeneralSettings);
         ToggleRevealMiniMaxKeyCommand = new AsyncRelayCommand(ToggleRevealMiniMaxKeyAsync);
         ToggleRevealDeepSeekKeyCommand = new AsyncRelayCommand(ToggleRevealDeepSeekKeyAsync);
+        ToggleRevealTokenPlanCookieCommand = new AsyncRelayCommand(ToggleRevealTokenPlanCookieAsync);
         AddCustomPlatformCommand = new RelayCommand(AddCustomPlatform);
         AddOpenCodeGoTemplateCommand = new RelayCommand(AddOpenCodeGoTemplate);
         EnterTrayModeCommand = new AsyncRelayCommand(_presentation.EnterTrayPopupAsync);
@@ -413,6 +441,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         // 已配置的 Key 默认以掩码呈现，避免打开设置页就直接把明文带出来。
         MiniMaxKeyDisplayText = IsMiniMaxConfigured ? KeyMask : string.Empty;
         DeepSeekKeyDisplayText = IsDeepSeekConfigured ? KeyMask : string.Empty;
+        TokenPlanCookieDisplayText = IsTokenPlanConfigured ? KeyMask : string.Empty;
         RefreshLoginStatus();
     }
 
@@ -420,6 +449,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         IsMiniMaxConfigured = !string.IsNullOrEmpty(_credentialStore.TryRead(MiniMaxKeyName));
         IsDeepSeekConfigured = !string.IsNullOrEmpty(_credentialStore.TryRead(DeepSeekKeyName));
+        IsTokenPlanConfigured = !string.IsNullOrEmpty(_credentialStore.TryRead(TokenPlanCookieKeyName));
         MiniMaxConfiguredText = IsMiniMaxConfigured ? "已配置" : "未配置";
         DeepSeekConfiguredText = IsDeepSeekConfigured ? "已配置" : "未配置";
     }
@@ -474,11 +504,70 @@ public sealed partial class SettingsViewModel : ObservableObject
         DeepSeekKeyDisplayText = KeyMask;
     }
 
+    private async Task ToggleRevealTokenPlanCookieAsync()
+    {
+        if (IsTokenPlanCookieRevealed)
+        {
+            HideTokenPlanCookie();
+            return;
+        }
+
+        var result = await _verifyIdentity("验证身份以查看百炼 Console Cookie 明文");
+        if (result != IdentityVerificationResult.Verified)
+        {
+            StatusMessage = result == IdentityVerificationResult.Cancelled ? "已取消验证" : "验证失败，无法显示明文";
+            return;
+        }
+
+        TokenPlanCookieDisplayText = _credentialStore.TryRead(TokenPlanCookieKeyName) ?? string.Empty;
+        IsTokenPlanCookieRevealed = true;
+    }
+
+    private void HideTokenPlanCookie()
+    {
+        IsTokenPlanCookieRevealed = false;
+        TokenPlanCookieDisplayText = KeyMask;
+    }
+
+    private void SaveTokenPlanCookie()
+    {
+        // 掩码状态下输入框只读，不会产生新值；直接保存会误把掩码写进凭据管理器。
+        if (TokenPlanCookieIsReadOnly)
+        {
+            StatusMessage = "当前为掩码状态，点开眼睛并验证身份后即可编辑保存";
+            return;
+        }
+
+        var value = TokenPlanCookieDisplayText?.Trim();
+        if (string.IsNullOrEmpty(value))
+        {
+            StatusMessage = "请输入百炼 Console Cookie";
+            return;
+        }
+
+        _credentialStore.Save(TokenPlanCookieKeyName, value);
+        IsTokenPlanConfigured = true;
+        TokenPlanCookieDisplayText = KeyMask;
+        IsTokenPlanCookieRevealed = false;
+        RefreshCredentialLabels();
+        StatusMessage = "百炼 Console Cookie 已写入 Windows 凭据管理器";
+    }
+
+    private void ClearTokenPlanCookie()
+    {
+        _credentialStore.Delete(TokenPlanCookieKeyName);
+        TokenPlanCookieDisplayText = string.Empty;
+        IsTokenPlanCookieRevealed = false;
+        RefreshCredentialLabels();
+        StatusMessage = "已清除百炼 Console Cookie 凭据";
+    }
+
     /// <summary>窗口失焦/关闭时调用，避免明文 Key 在界面上停留超出必要时间。</summary>
     public void HideAllRevealedKeys()
     {
         HideMiniMaxKey();
         HideDeepSeekKey();
+        HideTokenPlanCookie();
         foreach (var row in CustomPlatformRows)
         {
             row.HideKey();
