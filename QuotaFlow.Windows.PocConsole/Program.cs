@@ -30,6 +30,11 @@ switch (args[0])
         return await CheckAllAsync(store);
     case "diag-tokenplan":
         return await DiagTokenPlanAsync(store);
+    case "clear-tokenplan":
+        store.DeleteLarge("alibaba:tokenplan:consoleCookie");
+        store.Delete("alibaba:tokenplan:secToken");
+        Console.WriteLine("已清除百炼 Token Plan 登录态凭据");
+        return 0;
     case "diag-tokenplan-html":
         return await DiagTokenPlanHtmlAsync(store);
     case "make-icon":

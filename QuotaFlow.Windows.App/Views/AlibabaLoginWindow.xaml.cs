@@ -36,9 +36,30 @@ public partial class AlibabaLoginWindow : Window
 {
     private const string ConsoleUrl = "https://bailian.console.aliyun.com/cn-beijing?tab=plan";
 
-    /// <summary>出现即代表已登录的阿里云会话 Cookie 名（任一命中即可）。</summary>
-    private static readonly string[] SessionCookieSignals =
-        ["login_aliyunid", "login_aliyunid_pk", "sid", "unb", "aliyun_choice", "LOGIN_ALIYUNID"];
+    /// <summary>
+    /// 【已废弃的判定方式，保留说明以免重蹈覆辙】早期用"存在某些 Cookie 名"来判定已登录，
+    /// 实测这是错的：`login_aliyunid_pk` / `login_current_pk` 这类 Cookie 记录的是"这个浏览器
+    /// Profile 上次登录过哪个账号"，属于历史残留，即使当前会话已登出/过期也依然存在；
+    /// `cna` / `isg` / `tfstk` 更是阿里巴巴全站的匿名追踪 Cookie，跟登录完全无关。
+    /// 依赖它们会导致"页面明明显示未登录，程序却判定已登录、抓一堆无效 Cookie 就关窗"。
+    /// 现在改为只信任页面真实渲染出的登录态（<see cref="IsLoggedInAsync"/>）。
+    /// </summary>
+    /// <summary>登录探测脚本约定的"已登录"标记前缀，宿主侧按它精确匹配。</summary>
+    private const string LoggedInMarker = "YES:";
+
+    private const string LoginStateProbeJs = """
+        (function () {
+            try {
+                var cfg = window.ALIYUN_CONSOLE_CONFIG || {};
+                var pk = cfg.CURRENT_PK;
+                // CURRENT_PK 必须是非空、非 'null'/'undefined' 字面量的真实账号 ID。
+                if (pk === null || pk === undefined) { return 'NO'; }
+                pk = ('' + pk).trim();
+                if (pk === '' || pk === 'null' || pk === 'undefined' || pk === '0') { return 'NO'; }
+                return 'YES:' + pk.length;
+            } catch (e) { return 'ERR'; }
+        })();
+        """;
 
     private readonly DispatcherTimer _detectTimer;
     private readonly List<CoreWebView2Frame> _childFrames = [];
@@ -137,6 +158,12 @@ public partial class AlibabaLoginWindow : Window
             _webViewReady = true;
 
             LoadingHint.Text = "正在加载阿里云百炼控制台…";
+            // 首屏加载完就把这层覆盖文字撤掉——它是绝对定位悬浮在 WebView2 之上的，
+            // 不隐藏会一直压在登录页面中央。
+            LoginWebView.CoreWebView2.NavigationCompleted += (_, _) =>
+            {
+                LoadingHint.Visibility = Visibility.Collapsed;
+            };
             _detectTimer.Start();
 
             // 关键时序：不能在窗口还没完成布局时就 Navigate——WebView2 会用当时的极小初始尺寸
@@ -205,6 +232,11 @@ public partial class AlibabaLoginWindow : Window
         try
         {
             loggedIn = await IsLoggedInAsync();
+            // 让用户看得见程序在等什么——之前窗口"没登录就自己关了"时，用户完全无从判断
+            // 程序处于什么状态。
+            StatusHint.Text = loggedIn
+                ? "已检测到登录状态，正在读取额度所需信息…"
+                : "等待登录…（请在下方页面完成阿里云账号登录）";
         }
         catch (Exception)
         {
@@ -266,27 +298,20 @@ public partial class AlibabaLoginWindow : Window
         Close();
     }
 
+    /// <summary>
+    /// 判定当前页面是否处于真实登录态。只信任页面渲染出的 <c>ALIYUN_CONSOLE_CONFIG.CURRENT_PK</c>，
+    /// 不再用"存在某些 Cookie 名"做兜底（原因见 <see cref="LoginStateProbeJs"/> 的注释：那些
+    /// Cookie 是历史残留/匿名追踪，会把未登录误判成已登录）。
+    ///
+    /// 注意 <c>ExecuteScriptAsync</c> 的返回值是 <b>JSON 序列化后</b>的结果：JS 返回字符串
+    /// <c>'NO'</c> 时，这里拿到的是带引号的 <c>"NO"</c>；JS 抛异常或返回 undefined 时拿到的是
+    /// 字面量 <c>null</c>（4 个字符）。早期代码用 <c>Trim('"').Length > 0</c> 判断，会把 <c>null</c>
+    /// 当成"拿到了账号 ID"从而误判已登录——这里改为精确匹配约定好的 <c>YES:</c> 前缀。
+    /// </summary>
     private async Task<bool> IsLoggedInAsync()
     {
-        // ① 页面里的用户主账号 ID（登录后才存在）。
-        const string js = """
-            (function () {
-                try {
-                    var cfg = window.ALIYUN_CONSOLE_CONFIG || {};
-                    return (cfg.CURRENT_PK || '').toString();
-                } catch (e) { return ''; }
-            })();
-            """;
-        var pkResult = await LoginWebView.CoreWebView2.ExecuteScriptAsync(js);
-        if (!string.IsNullOrWhiteSpace(pkResult) && pkResult.Trim('"').Length > 0)
-        {
-            return true;
-        }
-
-        // ② 会话 Cookie 兜底：uri 传 null 时 WebView2 返回当前 Profile 里的全部 Cookie
-        // （不限定域名——理由见类注释：按域名筛选是脆弱的猜测，曾经因此漏掉过关键会话 Cookie）。
-        var cookies = await LoginWebView.CoreWebView2.CookieManager.GetCookiesAsync(null);
-        return cookies.Any(c => SessionCookieSignals.Contains(c.Name, StringComparer.OrdinalIgnoreCase));
+        var raw = await LoginWebView.CoreWebView2.ExecuteScriptAsync(LoginStateProbeJs);
+        return Core.Providers.WebViewScriptResult.HasMarker(raw, LoggedInMarker);
     }
 
     /// <summary>抓取当前登录会话的<b>全部</b> Cookie（不按域名筛选），按

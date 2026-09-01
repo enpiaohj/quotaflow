@@ -7,10 +7,17 @@
         Background="{DynamicResource Brush.Background}">
 
     <DockPanel>
-        <!-- 顶部提示条：说明登录完成会自动关闭本窗口并开始查询额度 -->
+        <!-- 顶部提示条：说明登录完成会自动关闭本窗口并开始查询额度。
+             文案要说清"就在下面这个页面里登录"——这个窗口用的是应用独立的浏览器数据目录，
+             跟系统 Edge/Chrome 的登录状态天然隔离，用户在别处登录过并不会自动带进来。 -->
         <Border DockPanel.Dock="Top" Background="{DynamicResource Brush.Divider}" Padding="12,8">
-            <TextBlock Text="请在弹出的窗口中登录你的阿里云账号（百炼控制台）。登录成功后本窗口会自动关闭并开始查询 Token Plan 额度，无需手动复制任何内容。"
-                       FontSize="12" Foreground="{DynamicResource Brush.TextSecondary}" TextWrapping="Wrap" />
+            <StackPanel>
+                <TextBlock Text="请在下方页面中登录你的阿里云账号。本窗口使用独立的浏览器数据，不会共享你在 Edge/Chrome 里的登录状态，首次使用需要在这里登录一次。"
+                           FontSize="12" Foreground="{DynamicResource Brush.TextSecondary}" TextWrapping="Wrap" />
+                <TextBlock x:Name="StatusHint" Text="等待登录…" Margin="0,4,0,0"
+                           FontSize="12" FontWeight="SemiBold"
+                           Foreground="{DynamicResource Brush.TextPrimary}" TextWrapping="Wrap" />
+            </StackPanel>
         </Border>
 
         <!-- 底部取消条：注意必须放在 Grid 之前——DockPanel 里只有最后一个子元素才填充剩余空间，
