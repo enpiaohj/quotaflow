@@ -24,8 +24,12 @@ public sealed partial class SettingsViewModel : ObservableObject
     public const string DeepSeekKeyName = "deepseek:ApiKey";
 
     /// <summary>阿里云百炼 Token Plan（个人版）Console Cookie 的凭据管理器键名——与 API Key 同等
-    /// 敏感度，只走 <see cref="SecureCredentialStore"/>（Windows 凭据管理器），绝不落盘/写日志。</summary>
+    /// 敏感度，只走 <see cref="SecureCredentialStore"/>（Windows 凭据管理器），绝不落盘/写日志。
+    /// 用 UTF-8 存储：完整会话 Cookie 很长，默认的 UTF-16 编码会超出凭据管理器 2560 字节上限。</summary>
     public const string TokenPlanCookieKeyName = "alibaba:tokenplan:consoleCookie";
+
+    /// <summary>登录时从控制台页面抓到的 SEC_TOKEN 的凭据管理器键名（同样 UTF-8 存储）。</summary>
+    public const string TokenPlanSecTokenKeyName = "alibaba:tokenplan:secToken";
 
     private readonly AppSettingsStore _settingsStore;
     private readonly SecureCredentialStore _credentialStore;
@@ -441,7 +445,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         IsMiniMaxConfigured = !string.IsNullOrEmpty(_credentialStore.TryRead(MiniMaxKeyName));
         IsDeepSeekConfigured = !string.IsNullOrEmpty(_credentialStore.TryRead(DeepSeekKeyName));
-        IsTokenPlanConfigured = !string.IsNullOrEmpty(_credentialStore.TryRead(TokenPlanCookieKeyName));
+        IsTokenPlanConfigured = !string.IsNullOrEmpty(_credentialStore.TryRead(TokenPlanCookieKeyName, useUtf8: true));
         MiniMaxConfiguredText = IsMiniMaxConfigured ? "已配置" : "未配置";
         DeepSeekConfiguredText = IsDeepSeekConfigured ? "已配置" : "未配置";
     }
@@ -511,10 +515,10 @@ public sealed partial class SettingsViewModel : ObservableObject
         try
         {
             var loginWindow = new Views.AlibabaLoginWindow { Owner = WindowForDialog() };
-            var loginCompleted = new TaskCompletionSource<(bool Success, string? Cookie, string? Error)>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var loginCompleted = new TaskCompletionSource<(bool Success, string? Cookie, string? SecToken, string? Error)>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-            void OnSucceeded(string cookie) => loginCompleted.TrySetResult((true, cookie, null));
-            void OnFailed(string error) => loginCompleted.TrySetResult((false, null, error));
+            void OnSucceeded(string cookie, string secToken) => loginCompleted.TrySetResult((true, cookie, secToken, null));
+            void OnFailed(string error) => loginCompleted.TrySetResult((false, null, null, error));
             loginWindow.LoginSucceeded += OnSucceeded;
             loginWindow.LoginFailed += OnFailed;
 
@@ -526,9 +530,12 @@ public sealed partial class SettingsViewModel : ObservableObject
 
             if (result.Success && result.Cookie is { } cookie)
             {
-                _credentialStore.Save(TokenPlanCookieKeyName, cookie);
+                SaveTokenPlanCredentials(cookie, result.SecToken);
                 RefreshCredentialLabels();
-                StatusMessage = "百炼登录成功，登录态已安全保存，正在查询额度…";
+
+                var cookieCount = cookie.Split(';', StringSplitOptions.RemoveEmptyEntries).Length;
+                var secTokenNote = string.IsNullOrEmpty(result.SecToken) ? "（未捕获 SEC_TOKEN，将尝试从页面提取）" : string.Empty;
+                StatusMessage = $"百炼登录成功，已保存 {cookieCount} 个会话 Cookie，正在查询额度…{secTokenNote}";
                 // 触发面板立即刷新，让额度卡片马上出现/更新（与"保存设置"同一套生效路径）。
                 SettingsSaved?.Invoke(this, BuildSettingsSnapshot().Settings);
             }
@@ -537,9 +544,30 @@ public sealed partial class SettingsViewModel : ObservableObject
                 StatusMessage = result.Error ?? "已取消百炼登录";
             }
         }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // 凭据写入失败（如 Cookie 超出凭据管理器 2560 字节上限）等异常：给出明确提示，
+            // 绝不能静默崩溃——否则表现就是"登录窗口消失但额度卡片没出现"。
+            StatusMessage = $"百炼登录态保存失败：{ex.Message}，请重试或在反馈时附上此提示";
+        }
         finally
         {
             IsTokenPlanLoggingIn = false;
+        }
+    }
+
+    /// <summary>把登录抓到的 Cookie（+ 可选 SEC_TOKEN）写入 Windows 凭据管理器。Cookie/SEC_TOKEN
+    /// 都是 ASCII 长值，用 UTF-8 编码存储以绕过凭据管理器单个凭据 2560 字节的 UTF-16 上限。</summary>
+    private void SaveTokenPlanCredentials(string cookie, string? secToken)
+    {
+        _credentialStore.Save(TokenPlanCookieKeyName, cookie, useUtf8: true);
+        if (!string.IsNullOrEmpty(secToken))
+        {
+            _credentialStore.Save(TokenPlanSecTokenKeyName, secToken, useUtf8: true);
+        }
+        else
+        {
+            _credentialStore.Delete(TokenPlanSecTokenKeyName);
         }
     }
 
@@ -553,6 +581,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     private void ClearTokenPlanCookie()
     {
         _credentialStore.Delete(TokenPlanCookieKeyName);
+        _credentialStore.Delete(TokenPlanSecTokenKeyName);
         RefreshCredentialLabels();
         StatusMessage = "已清除百炼登录态，重新查询前需要再次登录";
     }

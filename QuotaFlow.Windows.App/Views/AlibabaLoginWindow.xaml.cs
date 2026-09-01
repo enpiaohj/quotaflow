@@ -15,12 +15,18 @@ namespace QuotaFlow.Windows.App.Views;
 ///
 /// 登录完成判定：轮询页面里的 <c>window.ALIYUN_CONSOLE_CONFIG.CURRENT_PK</c>（登录后才会有
 /// 用户主账号 ID），或凭据管理器里出现阿里云登录会话 Cookie（login_aliyunid / sid 等），
-/// 两者任一命中即认为登录成功。抓 Cookie 时对 <c>bailian.console.aliyun.com</c> 和
-/// <c>bailian-cs.console.aliyun.com</c> 两个域名都取一次并去重合并——控制台网关和页面分属
-/// 不同子域，只取一个域的 Cookie 可能缺失部分会话信息。
+/// 两者任一命中即认为登录成功。
+///
+/// Cookie 只收集<b>网关真正会用到</b>的域：<c>bailian-cs.console.aliyun.com</c>（查询网关）和
+/// <c>www.aliyun.com</c>（父域 .aliyun.com 的登录会话 Cookie）。不收集 bailian.console 页面的
+/// 本地状态/埋点 Cookie——既减小体积（Windows 凭据管理器单个凭据有 2560 字节上限），
+/// 也保证交给网关的正好是网关会收到的那批 Cookie。
+///
+/// 登录成功后还会顺带从页面 JS 里提取 SEC_TOKEN（控制台脚本注入的令牌，供查询网关鉴权），
+/// 一并交还调用方；Provider 优先使用它，避免每次查询都依赖从 HTML 正则提取。
 ///
 /// 安全：WebView2 使用独立的 UserDataFolder（应用私有目录），Cookie 抓取后立即以事件形式
-/// 交还调用方（仅内存传递），本窗口不落盘。
+/// 交还调用方（仅内存传递），本窗口不落盘、不写日志。
 /// </summary>
 public partial class AlibabaLoginWindow : Window
 {
@@ -30,10 +36,12 @@ public partial class AlibabaLoginWindow : Window
     private static readonly string[] SessionCookieSignals =
         ["login_aliyunid", "login_aliyunid_pk", "sid", "unb", "aliyun_choice", "LOGIN_ALIYUNID"];
 
+    /// <summary>只收集网关（bailian-cs）与父域（www.aliyun.com → .aliyun.com）的 Cookie，
+    /// 它们正好是查询网关请求会携带的那批；不收集 bailian.console 页面自身的本地 Cookie。</summary>
     private static readonly string[] CookieHosts =
     [
-        "https://bailian.console.aliyun.com",
         "https://bailian-cs.console.aliyun.com",
+        "https://www.aliyun.com",
     ];
 
     private readonly DispatcherTimer _detectTimer;
@@ -42,8 +50,9 @@ public partial class AlibabaLoginWindow : Window
     private bool _webViewReady;
     private bool _navigated;
 
-    /// <summary>登录成功事件：携带抓取到的完整 Cookie 字符串（仅内存传递）。</summary>
-    public event Action<string>? LoginSucceeded;
+    /// <summary>登录成功事件：携带抓取到的 Cookie 字符串 + 页面里提取到的 SEC_TOKEN（均为空
+    /// 字符串表示未取到；仅内存传递，调用方负责安全存储）。</summary>
+    public event Action<string, string>? LoginSucceeded;
 
     /// <summary>登录过程失败（WebView2 不可用等）。非用户主动取消。</summary>
     public event Action<string>? LoginFailed;
@@ -173,7 +182,19 @@ public partial class AlibabaLoginWindow : Window
             return;
         }
 
-        LoginSucceeded?.Invoke(cookieString);
+        // 顺带从页面 JS 里提取 SEC_TOKEN（供查询网关鉴权），取不到也不阻塞——Provider 会降级
+        // 到从控制台页面 HTML 正则提取。
+        var secToken = string.Empty;
+        try
+        {
+            secToken = await TryExtractSecTokenAsync();
+        }
+        catch (Exception)
+        {
+            // 提取失败不影响登录完成。
+        }
+
+        LoginSucceeded?.Invoke(cookieString, secToken);
         Close();
     }
 
@@ -230,6 +251,36 @@ public partial class AlibabaLoginWindow : Window
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>从登录后的页面里提取 SEC_TOKEN：优先 window.SEC_TOKEN，其次遍历 window 全局里
+    /// 带 SEC_TOKEN 字符串属性的对象，最后对 DOM 做正则（对应产品资料里的 SEC_TOKEN 提取模式）。</summary>
+    private async Task<string> TryExtractSecTokenAsync()
+    {
+        const string js = """
+            (function () {
+                try {
+                    if (typeof window.SEC_TOKEN !== 'undefined' && window.SEC_TOKEN) {
+                        return window.SEC_TOKEN.toString();
+                    }
+                    for (var k in window) {
+                        try {
+                            var v = window[k];
+                            if (v && typeof v === 'object' && typeof v.SEC_TOKEN === 'string' && v.SEC_TOKEN) {
+                                return v.SEC_TOKEN;
+                            }
+                        } catch (e) { }
+                    }
+                    var m = (document.documentElement ? document.documentElement.outerHTML : '').match(/\bSEC_TOKEN\s*:\s*"([^"]+)"/);
+                    if (m && m[1]) return m[1];
+                } catch (e) { }
+                return '';
+            })();
+            """;
+
+        var result = await LoginWebView.CoreWebView2.ExecuteScriptAsync(js);
+        var token = result?.Trim().Trim('"');
+        return string.IsNullOrEmpty(token) ? string.Empty : token;
     }
 
     private void OnCancelClick(object sender, RoutedEventArgs e)

@@ -49,13 +49,17 @@ public sealed class AlibabaTokenPlanQuotaProvider : IQuotaProvider
 
     private readonly HttpClient _httpClient;
     private readonly Func<string?> _cookieProvider;
+    private readonly Func<string?>? _secTokenProvider;
 
     public string ProviderId => "alibaba-tokenplan";
 
-    public AlibabaTokenPlanQuotaProvider(HttpClient httpClient, Func<string?> cookieProvider)
+    /// <param name="secTokenProvider">登录时从控制台页面抓到的 SEC_TOKEN（存 Windows 凭据管理器）。
+    /// 提供时优先使用，跳过"从控制台 HTML 正则提取"这一步；为 null（或取不到）时降级到 HTML 提取。</param>
+    public AlibabaTokenPlanQuotaProvider(HttpClient httpClient, Func<string?> cookieProvider, Func<string?>? secTokenProvider = null)
     {
         _httpClient = httpClient;
         _cookieProvider = cookieProvider;
+        _secTokenProvider = secTokenProvider;
     }
 
     public async Task<ProviderSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default)
@@ -66,8 +70,7 @@ public sealed class AlibabaTokenPlanQuotaProvider : IQuotaProvider
             return NotConfigured();
         }
 
-        TraceLog("Fetching SEC_TOKEN...");
-        var secToken = await FetchSecTokenAsync(cookie, cancellationToken);
+        var secToken = await ResolveSecTokenAsync(cookie, cancellationToken);
         if (secToken.Error is not null)
         {
             return secToken.Error;
@@ -111,7 +114,32 @@ public sealed class AlibabaTokenPlanQuotaProvider : IQuotaProvider
         };
     }
 
-    /// <summary>第一步：拉控制台页面并从 HTML 里提取 SEC_TOKEN。</summary>
+    /// <summary>
+    /// 解析 SEC_TOKEN：优先用登录时从页面抓到的（存凭据管理器，最可靠）；没有时才降级为
+    /// "拉控制台页面 HTML 正则提取"。用存储值可以跳过一整个 HTTP 往返，也更不容易因
+    /// 控制台前端结构变化而失败。
+    /// </summary>
+    private async Task<SecTokenResult> ResolveSecTokenAsync(string cookie, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var stored = _secTokenProvider?.Invoke();
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                TraceLog("Using SEC_TOKEN captured at login");
+                return SecTokenResult.Ok(stored.Trim());
+            }
+        }
+        catch (Exception)
+        {
+            // 读取凭据失败走 HTML 提取兜底。
+        }
+
+        TraceLog("Fetching SEC_TOKEN from console page...");
+        return await FetchSecTokenAsync(cookie, cancellationToken);
+    }
+
+    /// <summary>第一步（降级路径）：拉控制台页面并从 HTML 里提取 SEC_TOKEN。</summary>
     private async Task<SecTokenResult> FetchSecTokenAsync(string cookie, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, ConsoleUrl);

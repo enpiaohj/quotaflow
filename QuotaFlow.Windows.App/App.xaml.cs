@@ -167,10 +167,12 @@ public partial class App : Application
             () => _credentialStore.TryRead(SettingsViewModel.DeepSeekKeyName),
             settings.DeepSeekEndpointOverride);
 
-        // 阿里云百炼 Token Plan（个人版）——测试版本；凭据是 Console Cookie，
-        // 只存 Windows 凭据管理器（SecureCredentialStore），与其它平台同规矩：不落盘、不写日志。
+        // 阿里云百炼 Token Plan（个人版）——测试版本；凭据是 Console Cookie（+ 登录时抓的
+        // SEC_TOKEN），只存 Windows 凭据管理器（SecureCredentialStore），与其它平台同规矩：
+        // 不落盘、不写日志。两者都是 ASCII 长值，用 UTF-8 存取以绕过凭据管理器 2560 字节上限。
         yield return new AlibabaTokenPlanQuotaProvider(_httpClient,
-            () => _credentialStore.TryRead(SettingsViewModel.TokenPlanCookieKeyName));
+            () => _credentialStore.TryRead(SettingsViewModel.TokenPlanCookieKeyName, useUtf8: true),
+            () => _credentialStore.TryRead(SettingsViewModel.TokenPlanSecTokenKeyName, useUtf8: true));
 
         // 设置页手动添加的自定义平台（OpenCode GO 等）。Id 固定为 custom-{n}，凭据键由此派生；
         // 防御性跳过配置残缺（Id/地址为空、撞内置 Id、重复自定义 Id、一个额度窗口都没有）的条目，

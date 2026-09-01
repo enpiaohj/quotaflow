@@ -2,6 +2,26 @@
 
 版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)（`主版本.次版本.修订号`），每次发布打对应的 Git tag（`vX.Y.Z`）。
 
+## [1.4.7] - 2026-09-01
+
+### 修复
+
+- **百炼登录成功后窗口消失、但额度卡片不出现**：根因是登录抓到的完整会话 Cookie 太长，用
+  UTF-16 编码写入 Windows 凭据管理器时超出单条凭据 2560 字节上限，`CredWrite` 失败（Win32
+  错误码 1783），异常又没被接住——Cookie 没保存成功，Provider 判定"未配置"，卡片按规则隐藏，
+  表现就是"登录后什么都没出现"。四处修：
+  1. Cookie 只收集查询网关真正会用的域（`bailian-cs.console.aliyun.com` + 父域
+     `www.aliyun.com`），不再收集页面本地/埋点 Cookie，体积大幅减小；
+  2. 登录抓到的 Cookie 和 SEC_TOKEN 改用 UTF-8 编码存入凭据管理器（ASCII 值体积减半，
+     2560 字节上限内能装更多）；
+  3. `SecureCredentialStore.Save` 增加显式大小校验，超限时给出可读错误（含字节数），
+     而不是让 Win32 错误码裸奔；
+  4. `LoginTokenPlanAsync` 增加异常兜底，登录态保存失败时在设置页给出明确提示。
+- **登录时顺带从页面提取 SEC_TOKEN**：登录成功后从 WebView2 页面 JS 里提取 SEC_TOKEN 并保存，
+  查询时优先使用（跳过每次从控制台 HTML 正则提取的不稳定路径），取不到时才降级为 HTML 提取。
+
+Core+Tests 221/221 通过（新增 UTF-8 超长凭据往返、超限可读错误两个回归测试）。
+
 ## [1.4.6] - 2026-09-01
 
 ### 修复
