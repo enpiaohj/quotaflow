@@ -37,7 +37,7 @@
          快速试错阶段（登录态抓取、SEC_TOKEN 提取等核心链路尚未在真实账号上稳定跑通），
          0.x 更准确地表达"尚未达到可以对外承诺稳定性的正式版"这个真实状态。等这个 Provider
          稳定可用后再规划何时跳回 1.0.0。 -->
-    <Version>0.5.0</Version>
+    <Version>0.5.1</Version>
     <Product>QuotaFlow</Product>
     <Company>QuotaFlow</Company>
   </PropertyGroup>

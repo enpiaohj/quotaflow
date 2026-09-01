@@ -178,6 +178,19 @@ static async Task<int> DiagTokenPlanAsync(SecureCredentialStore store)
     Console.WriteLine($"Cookie present: {cookie is not null}, length: {cookie?.Length ?? 0}, pair count: {cookie?.Split(';', StringSplitOptions.RemoveEmptyEntries).Length ?? 0}");
     Console.WriteLine($"SEC_TOKEN present: {!string.IsNullOrEmpty(secToken)}, length: {secToken?.Length ?? 0}");
 
+    if (cookie is not null)
+    {
+        // 只打印 Cookie 名字列表（不含值），检查 SEC_TOKEN 是否其实是一个 Cookie 名而不是页面变量。
+        var names = cookie.Split(';', StringSplitOptions.RemoveEmptyEntries)
+            .Select(p => p.Split('=', 2)[0].Trim())
+            .ToList();
+        Console.WriteLine($"Cookie names: {string.Join(", ", names)}");
+        Console.WriteLine($"Any cookie name contains 'SEC_TOKEN' (case-insensitive): {names.Any(n => n.Contains("SEC_TOKEN", StringComparison.OrdinalIgnoreCase))}");
+        Console.WriteLine($"Any cookie name contains 'token' (case-insensitive): {names.Any(n => n.Contains("token", StringComparison.OrdinalIgnoreCase))}");
+        Console.WriteLine($"Any cookie name contains 'csrf' (case-insensitive): {names.Any(n => n.Contains("csrf", StringComparison.OrdinalIgnoreCase))}");
+        Console.WriteLine($"Any cookie name contains 'xsrf' (case-insensitive): {names.Any(n => n.Contains("xsrf", StringComparison.OrdinalIgnoreCase))}");
+    }
+
     if (cookie is null)
     {
         Console.WriteLine("未配置：请先在应用设置页完成一键登录。");

@@ -79,6 +79,45 @@ public partial class AlibabaLoginWindow : Window
             // 主 frame（LoginWebView.CoreWebView2）看不到。这个 SDK 版本没有同步的 Frames
             // 集合，只能靠 FrameCreated 事件持续收集，供提取 SEC_TOKEN 时逐个尝试。
             LoginWebView.CoreWebView2.FrameCreated += (_, args) => _childFrames.Add(args.Frame);
+
+            // 临时诊断（问题解决后删除）：SEC_TOKEN 既不在主/子 frame 的 window 全局或 DOM 里，
+            // 也不是一个 Cookie 名——排除了目前所有假设。改为监听全部网络响应，看它是否是某次
+            // XHR/fetch 响应体里的字段（不挂在 window 上、只存在于页面脚本的闭包变量里，
+            // 外部 ExecuteScriptAsync 天然访问不到）。只记录"哪个 URL 的响应体里含有该字符串"
+            // 这类结构性信息，不记录响应体内容本身。
+            LoginWebView.CoreWebView2.WebResourceResponseReceived += async (_, args) =>
+            {
+                try
+                {
+                    var url = args.Request.Uri;
+                    // 只看 JSON/文本类响应，跳过图片/字体/脚本资源（脚本本身不含 token，只是逻辑）。
+                    var contentType = args.Response.Headers.FirstOrDefault(h => h.Key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase)).Value ?? "";
+                    if (!contentType.Contains("json", StringComparison.OrdinalIgnoreCase) &&
+                        !contentType.Contains("text", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return;
+                    }
+
+                    using var stream = await args.Response.GetContentAsync();
+                    if (stream is null)
+                    {
+                        return;
+                    }
+
+                    using var reader = new StreamReader(stream);
+                    var body = await reader.ReadToEndAsync();
+                    if (body.Contains("SEC_TOKEN", StringComparison.Ordinal))
+                    {
+                        File.AppendAllText(Path.Combine(Path.GetTempPath(), "quotaflow-tokenplan-network-diag.txt"),
+                            $"[{DateTime.Now:HH:mm:ss}] Response body contains 'SEC_TOKEN': {url} (Content-Type: {contentType}, length: {body.Length})\n");
+                    }
+                }
+                catch (Exception)
+                {
+                    // 单次响应检查失败不影响其它响应/主流程。
+                }
+            };
+
             _webViewReady = true;
 
             LoadingHint.Text = "正在加载阿里云百炼控制台…";

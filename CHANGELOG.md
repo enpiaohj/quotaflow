@@ -6,6 +6,20 @@
 > 保留不动）。从 `v0.5.0` 起改用 `0.x.y`——阿里云百炼 Token Plan 这个 Provider 仍处于快速试错
 > 阶段，`0.x` 更准确地反映"尚未达到可对外承诺稳定性"的真实状态，待其稳定后再规划重新回到 `1.x`。
 
+## [0.5.1] - 2026-09-01
+
+### 诊断（继续排查 SEC_TOKEN 获取不到）
+
+- 上一版的 iframe 诊断结果已排除三种假设：SEC_TOKEN 不在主 frame 的 window/DOM 里，也不在
+  已知的任何子 iframe 里（`smarter-engine` 和三个 `about:blank`），也不是已采集到的 17 个
+  Cookie 中的任何一个名字（不含 SEC_TOKEN / token / csrf / xsrf 关键字）。
+- 新增网络层诊断：监听 `WebResourceResponseReceived`，检查 JSON/文本类响应体里是否含有
+  `SEC_TOKEN` 字符串——如果它是通过某次 XHR/fetch 请求拿到、只存在于页面脚本闭包变量里
+  （不挂在 `window` 上），前几版的 DOM/变量遍历天然看不到，只有直接看网络流量才能定位。
+  只记录命中时的 URL/Content-Type/长度，不记录响应体内容本身。
+
+Core+Tests 227/227 通过。本版本仍是诊断性质，尚未确认 SEC_TOKEN 的真实来源。
+
 ## [0.5.0] - 2026-09-01
 
 ### 修复（继续排查百炼登录后拿不到 SEC_TOKEN）
