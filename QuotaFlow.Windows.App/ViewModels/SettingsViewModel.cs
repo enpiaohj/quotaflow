@@ -109,20 +109,6 @@ public sealed partial class SettingsViewModel : ObservableObject
         HotkeyKey = keyName;
     }
 
-    /// <summary>
-    /// 面板卡片顺序：v1.0.6 起改由面板本身的 ▲/▼ 直接调整并即时持久化（见 MainPanelViewModel），
-    /// 设置页不再重复提供这个入口。这里只是原样透传打开设置页时读到的顺序，避免"保存设置"
-    /// 把用户刚在面板上调整过的顺序覆盖回旧值。
-    /// </summary>
-    private readonly string[]? _initialPlatformOrder;
-
-    /// <summary>
-    /// 额度显示语义（已用/剩余）：v1.1.0 起改由面板顶部的切换按钮直接调整并即时持久化
-    /// （见 MainPanelViewModel），设置页不提供入口。原样透传，避免"保存设置"把面板上刚切换过的
-    /// 语义覆盖回默认值。
-    /// </summary>
-    private readonly QuotaDisplaySemantic _initialQuotaDisplaySemantic;
-
     /// <summary>设置页"自定义平台"的可编辑行：新增/编辑的定义在保存前也驻留于此。</summary>
     public ObservableCollection<CustomPlatformRow> CustomPlatformRows { get; } = [];
 
@@ -378,11 +364,9 @@ public sealed partial class SettingsViewModel : ObservableObject
         _codexEndpointOverride = current.CodexEndpointOverride ?? string.Empty;
         _miniMaxEndpointOverride = current.MiniMaxEndpointOverride ?? string.Empty;
         _deepSeekEndpointOverride = current.DeepSeekEndpointOverride ?? string.Empty;
-        _initialPlatformOrder = current.PlatformOrder;
         _hotkeyEnabled = current.HotkeyEnabled;
         _hotkeyModifiers = current.HotkeyModifiers;
         _hotkeyKey = current.HotkeyKey;
-        _initialQuotaDisplaySemantic = current.QuotaDisplaySemantic;
 
         _clockPreviewTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _clockPreviewTimer.Tick += (_, _) => RefreshClockPreviews();
@@ -767,31 +751,34 @@ public sealed partial class SettingsViewModel : ObservableObject
             customPlatforms.Add(def);
         }
 
-        var settings = new AppSettings
-        {
-            AutoRefreshIntervalMinutes = AutoRefreshIntervalMinutes,
-            RefreshOnStartup = RefreshOnStartup,
-            StartWithWindows = StartWithWindows,
-            Theme = Theme,
-            MiniMaxRegion = MiniMaxRegion,
-            ShowUnknownWindows = ShowUnknownWindows,
-            ClockDisplayFormat = ClockDisplayFormat,
-            // 接口地址覆盖：空串转 null（= 用内置默认）。不并入则保存普通设置会把覆盖项清掉。
-            ClaudeEndpointOverride = ToNullIfEmpty(ClaudeEndpointOverride),
-            CodexEndpointOverride = ToNullIfEmpty(CodexEndpointOverride),
-            MiniMaxEndpointOverride = ToNullIfEmpty(MiniMaxEndpointOverride),
-            DeepSeekEndpointOverride = ToNullIfEmpty(DeepSeekEndpointOverride),
-            // 面板顺序现在只由面板自己的 ▲/▼ 调整并即时持久化（见 MainPanelViewModel），
-            // 这里原样透传打开设置页时读到的值，不要覆盖用户在面板上刚调整过的顺序。
-            PlatformOrder = _initialPlatformOrder,
-            // 已用/剩余显示语义同理，由面板顶部切换并即时持久化，这里原样透传。
-            QuotaDisplaySemantic = _initialQuotaDisplaySemantic,
-            CustomPlatforms = customPlatforms,
-            HotkeyEnabled = HotkeyEnabled,
-            HotkeyModifiers = HotkeyModifiers,
-            HotkeyKey = HotkeyKey,
-        };
-
+        // 以磁盘上的当前设置为基线做"读-改-写"，只覆盖本页真正拥有的字段。
+        //
+        // 早期实现是 new AppSettings { ... } 从零构造：凡是没在初始化器里列出的字段都会取
+        // 默认值，然后被 Save 整体写盘。WindowDisplay 恰好没列出来，于是点一次「保存设置」
+        // 就把显示模式、不透明度、置顶、锁定位置、紧凑布局、材质、边缘吸附以及各显示器
+        // 记住的窗口位置全部重置回默认值——实测可稳定复现（勾选紧凑布局 → 保存 → 重启即丢失）。
+        // WindowPresentationCoordinator.Persist() 早就是"读-改-写"，两条持久化路径不对称
+        // 才是根因；这里改成同样的写法，顺带让将来新增的"面板即时生效字段"默认就不会被误伤。
+        var settings = _settingsStore.Load();
+        settings.AutoRefreshIntervalMinutes = AutoRefreshIntervalMinutes;
+        settings.RefreshOnStartup = RefreshOnStartup;
+        settings.StartWithWindows = StartWithWindows;
+        settings.Theme = Theme;
+        settings.MiniMaxRegion = MiniMaxRegion;
+        settings.ShowUnknownWindows = ShowUnknownWindows;
+        settings.ClockDisplayFormat = ClockDisplayFormat;
+        // 接口地址覆盖：空串转 null（= 用内置默认）。
+        settings.ClaudeEndpointOverride = ToNullIfEmpty(ClaudeEndpointOverride);
+        settings.CodexEndpointOverride = ToNullIfEmpty(CodexEndpointOverride);
+        settings.MiniMaxEndpointOverride = ToNullIfEmpty(MiniMaxEndpointOverride);
+        settings.DeepSeekEndpointOverride = ToNullIfEmpty(DeepSeekEndpointOverride);
+        settings.CustomPlatforms = customPlatforms;
+        settings.HotkeyEnabled = HotkeyEnabled;
+        settings.HotkeyModifiers = HotkeyModifiers;
+        settings.HotkeyKey = HotkeyKey;
+        // PlatformOrder / QuotaDisplaySemantic / WindowDisplay 都由面板即时持久化，不属于本页，
+        // 基线里是什么就保留什么——从磁盘读比用打开设置页时的快照更准确：用户在设置页开着的
+        // 同时调整了卡片顺序，也不会被这次保存回退。
         return (settings, skippedNames);
     }
 
