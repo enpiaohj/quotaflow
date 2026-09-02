@@ -12,6 +12,7 @@ namespace QuotaFlow.Windows.App.Services;
 /// </summary>
 public sealed class WindowPresentationCoordinator : IWindowPresentationCoordinator
 {
+    private const double TrayPopupWidth = 420;
     private const double FloatingDefaultWidth = 420;
     private const double FloatingDefaultHeight = 560;
     private const double DesktopDefaultWidth = 320;
@@ -74,6 +75,12 @@ public sealed class WindowPresentationCoordinator : IWindowPresentationCoordinat
             }
         };
         _window.MouseLeave += (_, _) => ApplyOpacityAndMaterial();
+
+        // 用户拖手柄改高度 -> 记住该模式的尺寸，之后不再自适应。
+        _window.UserResized += OnUserResized;
+
+        // 双击手柄 -> 清掉"手动尺寸"标记，该模式回到跟随内容。
+        _window.AutoHeightRestored += OnAutoHeightRestored;
     }
 
     private static WindowDisplaySettings CloneState(WindowDisplaySettings source) => new()
@@ -89,6 +96,7 @@ public sealed class WindowPresentationCoordinator : IWindowPresentationCoordinat
         EnhanceReadabilityOnHover = source.EnhanceReadabilityOnHover,
         FloatingPlacement = source.FloatingPlacement,
         DesktopPlacement = source.DesktopPlacement,
+        TrayPopupPlacement = source.TrayPopupPlacement,
     };
 
     public async Task EnterTrayPopupAsync() => await TransitionAsync(WindowPresentationMode.TrayPopup);
@@ -168,8 +176,80 @@ public sealed class WindowPresentationCoordinator : IWindowPresentationCoordinat
         HeightDip = _window.Height,
         SavedDpiX = MonitorService.GetDpiForWindow(_window).DpiX,
         SavedDpiY = MonitorService.GetDpiForWindow(_window).DpiY,
+        // 拖动位置不改变"尺寸是不是用户定的"这个事实，沿用当前模式已有的标记。
+        IsSizeManual = CurrentModePlacement()?.IsSizeManual ?? false,
         LastUpdatedAt = DateTimeOffset.UtcNow,
     };
+
+    /// <summary>当前模式对应的已保存位置（托盘模式只用其中的高度与手动标记）。</summary>
+    private SavedWindowPlacement? CurrentModePlacement() => _state.Mode switch
+    {
+        WindowPresentationMode.Floating => _state.FloatingPlacement,
+        WindowPresentationMode.DesktopPanel => _state.DesktopPlacement,
+        _ => _state.TrayPopupPlacement,
+    };
+
+    /// <summary>
+    /// 按"用户是否手动调过尺寸"决定窗口高度：手动调过就沿用记住的高度，否则跟随卡片数量自适应。
+    /// 三个模式共用这一条规则，行为一致。
+    /// </summary>
+    private void ApplyHeightPolicy(SavedWindowPlacement? placement)
+    {
+        if (placement is { IsSizeManual: true } manual && double.IsFinite(manual.HeightDip) && manual.HeightDip > 0)
+        {
+            _window.ApplyManualHeight(manual.HeightDip);
+        }
+        else
+        {
+            _window.ApplyAutoHeight();
+        }
+    }
+
+    /// <summary>用户双击手柄恢复自适应：清掉当前模式的手动尺寸记忆。</summary>
+    private void OnAutoHeightRestored(object? sender, EventArgs e)
+    {
+        switch (_state.Mode)
+        {
+            case WindowPresentationMode.Floating when _state.FloatingPlacement is not null:
+                _state.FloatingPlacement.IsSizeManual = false;
+                break;
+            case WindowPresentationMode.DesktopPanel when _state.DesktopPlacement is not null:
+                _state.DesktopPlacement.IsSizeManual = false;
+                break;
+            case WindowPresentationMode.TrayPopup:
+                _state.TrayPopupPlacement = null;
+                _window.PositionNearTaskbarPublic();
+                break;
+        }
+
+        Persist();
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>用户拖拽手柄改过尺寸：把当前模式标记为"尺寸由用户决定"并落盘。</summary>
+    private void OnUserResized(object? sender, EventArgs e)
+    {
+        var captured = CaptureCurrentPlacement();
+        captured.IsSizeManual = true;
+
+        switch (_state.Mode)
+        {
+            case WindowPresentationMode.Floating:
+                _state.FloatingPlacement = captured;
+                break;
+            case WindowPresentationMode.DesktopPanel:
+                _state.DesktopPlacement = captured;
+                break;
+            default:
+                // 托盘模式不记自由坐标，只记高度；位置仍由贴任务栏算法实时计算。
+                _state.TrayPopupPlacement = captured;
+                _window.PositionNearTaskbarPublic();
+                break;
+        }
+
+        Persist();
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
 
     private void ApplyTrayPopup()
     {
@@ -178,8 +258,18 @@ public sealed class WindowPresentationCoordinator : IWindowPresentationCoordinat
         _window.ShowInTaskbar = false;
         _window.IsDraggable = false;
         _window.PositionManagedExternally = false;
-        _window.Width = 420;
-        _window.Height = 560;
+        using (_window.SuppressUserResizeDetection())
+        {
+            _window.Width = TrayPopupWidth;
+            // 高度不再写死 560：没手动调过就按卡片数量自适应，调过就沿用记住的高度。
+            ApplyHeightPolicy(_state.TrayPopupPlacement);
+        }
+
+        // 贴边定位依赖最终高度，必须在高度确定之后算——自适应模式下 SizeToContent 需要
+        // 先完成一次布局，否则 Height 还是旧值，面板会错位。
+        _window.Dispatcher.BeginInvoke(
+            System.Windows.Threading.DispatcherPriority.Loaded,
+            new Action(_window.PositionNearTaskbarPublic));
         _window.PositionNearTaskbarPublic();
         ApplyOpacityAndMaterial();
     }
@@ -235,10 +325,13 @@ public sealed class WindowPresentationCoordinator : IWindowPresentationCoordinat
 
     private void ApplyPlacement(SavedWindowPlacement placement)
     {
-        _window.Left = placement.LeftDip;
-        _window.Top = placement.TopDip;
-        _window.Width = placement.WidthDip;
-        _window.Height = placement.HeightDip;
+        using (_window.SuppressUserResizeDetection())
+        {
+            _window.Left = placement.LeftDip;
+            _window.Top = placement.TopDip;
+            _window.Width = placement.WidthDip;
+            ApplyHeightPolicy(placement);
+        }
     }
 
     private void ApplyOpacityAndMaterial()

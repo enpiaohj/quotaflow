@@ -56,6 +56,12 @@ public static class PlacementValidation
             cleaned = true;
         }
 
+        if (display.TrayPopupPlacement is not null && !IsPersistable(display.TrayPopupPlacement))
+        {
+            display.TrayPopupPlacement = null;
+            cleaned = true;
+        }
+
         // 不透明度同理：非有限值一样会让序列化失败，回落到不透明。
         if (!double.IsFinite(display.Opacity) || display.Opacity <= 0)
         {

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Windows;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -27,6 +28,45 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
     private DispatcherTimer? _autoRefreshTimer;
 
     public ObservableCollection<ProviderCardViewModel> Cards { get; } = [];
+
+    /// <summary>
+    /// 可见卡片数量或卡片内容高度可能已变化（平台增删、被隐藏、从未配置变为已配置、
+    /// 额度窗口数量变化）。窗口据此在"高度跟随内容"状态下重新自适应——否则用户改完设置
+    /// 回到面板，还得自己再拉一次高度。
+    /// </summary>
+    public event EventHandler? ContentHeightMayHaveChanged;
+
+    /// <summary>上一次通知时的内容结构签名，用来过滤掉"数据变了但布局高度没变"的刷新。</summary>
+    private (int VisibleCards, int Windows, int Balances, int Expanded) _contentSignature = (-1, -1, -1, -1);
+
+    /// <summary>
+    /// 只有内容结构真的变化时才通知窗口重算高度。
+    ///
+    /// <see cref="ProviderCardViewModel.HasWindows"/> 在每次 <c>Apply(snapshot)</c> 都会触发
+    /// PropertyChanged——也就是每个刷新周期都触发一次。若不加这层过滤，面板会在每次刷新时
+    /// 重新测量并短暂矮一截，滚动条随之闪现（用户实测反馈）。高度只跟"有几张卡、几个额度窗口"
+    /// 有关，跟百分比数值变化无关。
+    /// </summary>
+    private void RaiseContentHeightMayHaveChanged()
+    {
+        var signature = (
+            VisibleCards: Cards.Count(c => c.Visibility == Visibility.Visible),
+            Windows: Cards.Where(c => c.Visibility == Visibility.Visible).Sum(c => c.Windows.Count),
+            Balances: Cards.Count(c => c.Visibility == Visibility.Visible && c.HasBalance),
+            Expanded: Cards.Count(c => c.IsExpanded));
+
+        if (signature == _contentSignature)
+        {
+            return;
+        }
+
+        _contentSignature = signature;
+        ContentHeightMayHaveChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>卡片增删（平台新增/移除）同样改变内容高度。</summary>
+    private void HookCardCollectionChanges()
+        => Cards.CollectionChanged += (_, _) => RaiseContentHeightMayHaveChanged();
 
     [ObservableProperty] private bool _isRefreshingAll;
     [ObservableProperty] private string _headerLastUpdatedText = string.Empty;
@@ -169,6 +209,8 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
         ToggleDisplaySemanticCommand = new RelayCommand(ToggleDisplaySemantic);
         TogglePinCommand = new RelayCommand(() => IsPinned = !IsPinned);
 
+        HookCardCollectionChanges();
+
         // 初始顺序：Claude → Codex → MiniMax → DeepSeek（文档 §5.4），随后按设置里的 PlatformOrder 重排。
         foreach (var id in _coordinator.ProviderIds)
         {
@@ -291,6 +333,19 @@ public sealed partial class MainPanelViewModel : ObservableObject, IDisposable
     {
         var card = new ProviderCardViewModel(id, DisplayNameFor(id), () => RefreshOneAsync(id));
         card.UpdateDisplaySemantic(DisplaySemantic);
+
+        // 卡片被隐藏/显示、额度窗口增减、余额块出现，都会改变面板内容的总高度。
+        card.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(ProviderCardViewModel.Visibility)
+                or nameof(ProviderCardViewModel.HasWindows)
+                or nameof(ProviderCardViewModel.HasBalance)
+                or nameof(ProviderCardViewModel.IsExpanded))
+            {
+                RaiseContentHeightMayHaveChanged();
+            }
+        };
+
         return card;
     }
 

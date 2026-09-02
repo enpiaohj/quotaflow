@@ -52,6 +52,13 @@ public sealed class SavedWindowPlacement
     public double SavedDpiX { get; set; } = 96.0;
     public double SavedDpiY { get; set; } = 96.0;
 
+    /// <summary>
+    /// 尺寸是否由用户手动拖拽设定。false 表示"随内容自适应"——进入该模式时窗口高度跟着
+    /// 卡片数量走（封顶为工作区的一定比例），用户不必为了看全 5 个平台每次手动拉高。
+    /// 用户一旦拖过边框就置为 true，之后尊重用户的尺寸，不再自动改动。
+    /// </summary>
+    public bool IsSizeManual { get; set; }
+
     public DateTimeOffset LastUpdatedAt { get; set; }
 }
 
@@ -90,4 +97,12 @@ public sealed class WindowDisplaySettings
 
     /// <summary>桌面看板模式的位置/尺寸；null 表示从未进入过该模式。</summary>
     public SavedWindowPlacement? DesktopPlacement { get; set; }
+
+    /// <summary>
+    /// 托盘弹出模式的尺寸记忆。位置始终由贴任务栏算法实时计算（不用这里的 Left/Top），
+    /// 只有 <see cref="SavedWindowPlacement.HeightDip"/> 与
+    /// <see cref="SavedWindowPlacement.IsSizeManual"/> 参与决策：手动拖过就沿用该高度，
+    /// 否则每次弹出都按当前卡片数量自适应。null 表示从未手动调整过。
+    /// </summary>
+    public SavedWindowPlacement? TrayPopupPlacement { get; set; }
 }

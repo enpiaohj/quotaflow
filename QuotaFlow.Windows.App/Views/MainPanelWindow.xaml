@@ -6,7 +6,7 @@
         Title="QuotaFlow"
         Width="420" Height="560" MinHeight="120" MinWidth="200"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
-        ShowInTaskbar="False" Topmost="True" ResizeMode="NoResize"
+        ShowInTaskbar="False" Topmost="True" ResizeMode="CanResize"
         WindowStartupLocation="Manual"
         Deactivated="OnDeactivated"
         KeyDown="OnKeyDown"
@@ -43,18 +43,45 @@
             </Style.Triggers>
         </Style>
 
-        <!-- 紧凑布局（设置页/桌面看板模式默认开启）：卡片内边距收窄，不重排字段——
-             文档要求"标准/紧凑"共用同一套数据模板，只改间距密度，不是两套完全独立的 UI。 -->
+        <!-- 紧凑布局（设置页/桌面看板模式默认开启）：只收紧间距密度，不重排字段——
+             文档要求"标准/紧凑"共用同一套数据模板，不是两套完全独立的 UI。
+
+             v0.11.0 之前这里只改了 Padding 一处（14,11 → 10,7），每张卡片仅省 8px，
+             五个平台合计 40px（约 7%），用户实测"感觉不出来"。现在把卡片内边距、卡片间距、
+             额度窗口区顶距、每个额度窗口行间距四处一起收紧，每卡约省 23px。 -->
         <Style x:Key="Style.Card.Compactable" TargetType="Border" BasedOn="{StaticResource Style.Card}">
+            <Setter Property="Margin" Value="0,0,0,8" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding DataContext.IsCompactLayout, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
-                    <Setter Property="Padding" Value="10,7" />
+                    <Setter Property="Padding" Value="10,6" />
+                    <Setter Property="Margin" Value="0,0,0,4" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- 额度窗口列表与卡片头部之间的间距，紧凑模式下减半。 -->
+        <Style x:Key="Style.QuotaWindowList.Compactable" TargetType="ItemsControl">
+            <Setter Property="Margin" Value="0,6,0,0" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding DataContext.IsCompactLayout, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                    <Setter Property="Margin" Value="0,3,0,0" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- 单个额度窗口行的行间距，紧凑模式下减半。一个平台可能有多个额度窗口，
+             这里每省 3px 都会按窗口数放大。 -->
+        <Style x:Key="Style.QuotaWindowRow.Compactable" TargetType="Grid">
+            <Setter Property="Margin" Value="0,0,0,6" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding DataContext.IsCompactLayout, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                    <Setter Property="Margin" Value="0,0,0,3" />
                 </DataTrigger>
             </Style.Triggers>
         </Style>
 
         <DataTemplate x:Key="ProviderCardTemplate" DataType="{x:Type vm:ProviderCardViewModel}">
-            <Border Style="{StaticResource Style.Card.Compactable}" Margin="0,0,0,8" Visibility="{Binding Visibility}">
+            <Border Style="{StaticResource Style.Card.Compactable}" Visibility="{Binding Visibility}">
                 <StackPanel>
                     <!-- 卡片头部：状态点 + 名称 + 状态文案 + 排序箭头 + 展开按钮 -->
                     <Grid>
@@ -115,11 +142,12 @@
                     <!-- 额度窗口型卡片（Claude/Codex/MiniMax，及自定义平台）。v1.1.0 起与余额区块
                          各自独立可见（HasWindows / HasBalance），不再互斥——自定义平台理论上可以
                          同时有若干个百分比窗口和一个余额窗口。 -->
-                    <ItemsControl ItemsSource="{Binding Windows}" Margin="0,6,0,0"
+                    <ItemsControl ItemsSource="{Binding Windows}"
+                                  Style="{StaticResource Style.QuotaWindowList.Compactable}"
                                   Visibility="{Binding HasWindows, Converter={StaticResource BoolToVis}}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="{x:Type vm:QuotaWindowViewModel}">
-                                <Grid Margin="0,0,0,6">
+                                <Grid Style="{StaticResource Style.QuotaWindowRow.Compactable}">
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
                                         <RowDefinition Height="Auto" />
@@ -279,6 +307,38 @@
 
         <DockPanel Margin="16,14,16,12"
                    Visibility="{Binding IsDesktopPanelMode, Converter={StaticResource InverseBoolToVis}}">
+            <!-- 高度调整手柄。放在顶部而不是底部：托盘弹出模式下面板贴着任务栏上沿，
+                 向下没有可用空间，只能向上长。默认几乎不可见，鼠标移上去才显出短横条，
+                 既不干扰阅读，又让"这里可以拖"这件事被看见——一条隐形的窗口边框做不到。 -->
+            <Thumb x:Name="HeightResizeGrip" DockPanel.Dock="Top" Height="12" Margin="0,-10,0,2"
+                   Cursor="SizeNS" AutomationProperties.AutomationId="HeightResizeGrip"
+                   AutomationProperties.Name="调整面板高度"
+                   ToolTip="拖动调整面板高度 · 双击恢复自动高度"
+                   DragDelta="OnHeightGripDragDelta" DragCompleted="OnHeightGripDragCompleted"
+                   MouseDoubleClick="OnHeightGripDoubleClick">
+                <Thumb.Template>
+                    <ControlTemplate TargetType="Thumb">
+                        <Border Background="Transparent">
+                            <!-- 常驻可见（不是只在悬停时才出现）：用户反馈"不知道要双击哪里"，
+                                 一个只在鼠标压上去才显形的手柄等于不存在。默认淡淡一条，
+                                 不抢注意力，但看得见。 -->
+                            <Border x:Name="GripBar" Width="36" Height="4" CornerRadius="2"
+                                    VerticalAlignment="Center" HorizontalAlignment="Center"
+                                    Background="{DynamicResource Brush.TextTertiary}" Opacity="0.3" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="GripBar" Property="Opacity" Value="0.7" />
+                                <Setter TargetName="GripBar" Property="Width" Value="48" />
+                            </Trigger>
+                            <Trigger Property="IsDragging" Value="True">
+                                <Setter TargetName="GripBar" Property="Opacity" Value="0.9" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Thumb.Template>
+            </Thumb>
+
             <!-- 顶部区域：整块区域是拖动手柄（悬浮/桌面看板模式下 IsDraggable=true 时生效），
                  按钮位于其上层，Button 会在 MouseLeftButtonDown 时自行标记 Handled，
                  点击按钮不会触发拖动。 -->
@@ -383,7 +443,7 @@
             </Grid>
 
             <!-- 平台卡片：顺序按设置（PlatformOrder），未配置的平台自动隐藏；全部未配置时显示引导文案 -->
-            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <ScrollViewer x:Name="CardsScrollViewer" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel>
                     <ItemsControl ItemsSource="{Binding Cards}" ItemTemplate="{StaticResource ProviderCardTemplate}" />
 
@@ -433,6 +493,14 @@
                      跟随整个窗口的 MouseEnter/MouseLeave 驱动，尊重 Windows"减少动画"设置。 -->
                 <StackPanel x:Name="HoverToolbar" Grid.Column="1" Orientation="Horizontal"
                             Opacity="0" IsHitTestVisible="False" Background="{DynamicResource Brush.PanelBackground}">
+                    <!-- 模式切换恒定排在工具栏最左：标准视觉树里它也是第一个。两套工具栏是完全
+                         独立的视觉树，按钮集合本就不同（看板多了置顶/锁定，少了固定/语义/设置），
+                         但用户靠这个按钮在模式间来回切，它必须待在同一个位置，否则每切一次
+                         就要重新找。 -->
+                    <Button Style="{StaticResource Style.CompactToolbarButton}" Content="{Binding ModeGlyph}"
+                            ToolTip="{Binding ModeTooltip}"
+                            AutomationProperties.AutomationId="CompactCycleModeButton"
+                            Command="{Binding CycleDisplayModeCommand}" />
                     <Button Style="{StaticResource Style.CompactToolbarButton}" Content="&#8635;" ToolTip="刷新全部"
                             AutomationProperties.AutomationId="CompactRefreshAllButton"
                             Command="{Binding RefreshAllCommand}" />
@@ -465,10 +533,6 @@
                             </Style>
                         </Button.Style>
                     </Button>
-                    <Button Style="{StaticResource Style.CompactToolbarButton}" Content="{Binding ModeGlyph}"
-                            ToolTip="{Binding ModeTooltip}"
-                            AutomationProperties.AutomationId="CompactCycleModeButton"
-                            Command="{Binding CycleDisplayModeCommand}" />
                     <Button Style="{StaticResource Style.CompactToolbarButton}" Content="&#8943;" ToolTip="更多"
                             AutomationProperties.AutomationId="CompactMoreMenuButton"
                             Click="OnCompactMoreMenuClick">
