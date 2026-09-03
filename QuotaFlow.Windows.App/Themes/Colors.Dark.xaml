@@ -7,25 +7,33 @@
     <Color x:Key="Color.PanelBackground">#F22B2B2B</Color>
     <Color x:Key="Color.CardBackground">#FF323232</Color>
     <Color x:Key="Color.CardBorder">#26FFFFFF</Color>
+    <!-- 深色下卡片不描边：暗底与卡片的明度差已经构成边界，再加描边就是多余的框。 -->
+    <Color x:Key="Color.CardStroke">#00FFFFFF</Color>
     <Color x:Key="Color.TextPrimary">#FFFFFFFF</Color>
     <Color x:Key="Color.TextSecondary">#B3FFFFFF</Color>
     <Color x:Key="Color.TextTertiary">#80FFFFFF</Color>
     <Color x:Key="Color.Divider">#1AFFFFFF</Color>
     <Color x:Key="Color.HoverOverlay">#14FFFFFF</Color>
 
-    <Color x:Key="Color.StatusGood">#FF4CAF67</Color>
-    <Color x:Key="Color.StatusWarn">#FFF6B93B</Color>
-    <Color x:Key="Color.StatusBad">#FFF2705C</Color>
+    <Color x:Key="Color.StatusGood">#FF56C08A</Color>
+    <Color x:Key="Color.StatusWarn">#FFE8B057</Color>
+    <Color x:Key="Color.StatusBad">#FFE87F72</Color>
     <Color x:Key="Color.StatusUnknown">#FF9A9A9A</Color>
+
+    <!-- 与浅色主题同义：通用强调色，不再借用平台品牌色。 -->
+    <Color x:Key="Color.Accent">#FF6E9BEF</Color>
+    <Color x:Key="Color.TrackBackground">#26FFFFFF</Color>
 
     <Color x:Key="Color.AccentClaude">#FFE08363</Color>
     <Color x:Key="Color.AccentCodex">#FF2FBE96</Color>
     <Color x:Key="Color.AccentMiniMax">#FFF04E86</Color>
+    <Color x:Key="Color.AccentAlibaba">#FFFF8B3D</Color>
     <Color x:Key="Color.AccentDeepSeek">#FF6C86FF</Color>
 
     <SolidColorBrush x:Key="Brush.Background" Color="{StaticResource Color.Background}" />
     <SolidColorBrush x:Key="Brush.PanelBackground" Color="{StaticResource Color.PanelBackground}" />
     <SolidColorBrush x:Key="Brush.CardBackground" Color="{StaticResource Color.CardBackground}" />
+    <SolidColorBrush x:Key="Brush.CardStroke" Color="{StaticResource Color.CardStroke}" />
     <SolidColorBrush x:Key="Brush.CardBorder" Color="{StaticResource Color.CardBorder}" />
     <SolidColorBrush x:Key="Brush.TextPrimary" Color="{StaticResource Color.TextPrimary}" />
     <SolidColorBrush x:Key="Brush.TextSecondary" Color="{StaticResource Color.TextSecondary}" />
@@ -38,9 +46,12 @@
     <SolidColorBrush x:Key="Brush.StatusBad" Color="{StaticResource Color.StatusBad}" />
     <SolidColorBrush x:Key="Brush.StatusUnknown" Color="{StaticResource Color.StatusUnknown}" />
 
+    <SolidColorBrush x:Key="Brush.Accent" Color="{StaticResource Color.Accent}" />
+    <SolidColorBrush x:Key="Brush.TrackBackground" Color="{StaticResource Color.TrackBackground}" />
     <SolidColorBrush x:Key="Brush.AccentClaude" Color="{StaticResource Color.AccentClaude}" />
     <SolidColorBrush x:Key="Brush.AccentCodex" Color="{StaticResource Color.AccentCodex}" />
     <SolidColorBrush x:Key="Brush.AccentMiniMax" Color="{StaticResource Color.AccentMiniMax}" />
+    <SolidColorBrush x:Key="Brush.AccentAlibaba" Color="{StaticResource Color.AccentAlibaba}" />
     <SolidColorBrush x:Key="Brush.AccentDeepSeek" Color="{StaticResource Color.AccentDeepSeek}" />
 
 </ResourceDictionary>

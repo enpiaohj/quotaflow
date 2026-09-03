@@ -15,16 +15,19 @@
         <Setter Property="SnapsToDevicePixels" Value="True" />
     </Style>
 
-    <!-- 卡片容器：圆角、柔和边框和轻微阴影，背景保持干净。 -->
+    <!-- 卡片容器：圆角 + 轻阴影，不再加边框。
+         此前是"1px 边框 + 12 圆角 + 阴影"三者叠加，而外层面板同样有边框和阴影，
+         视觉上形成盒子套盒子。Fluent 的惯例是边框与阴影二选一：卡片浮在面板上，
+         用阴影表达层次即可，边框只会把每张卡片都框成一个独立控件。 -->
     <Style x:Key="Style.Card" TargetType="Border">
         <Setter Property="Background" Value="{DynamicResource Brush.CardBackground}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource Brush.CardBorder}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.CardStroke}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="CornerRadius" Value="12" />
+        <Setter Property="CornerRadius" Value="10" />
         <Setter Property="Padding" Value="14,11" />
         <Setter Property="Effect">
             <Setter.Value>
-                <DropShadowEffect Color="#000000" Opacity="0.08" BlurRadius="12" ShadowDepth="1" Direction="270" />
+                <DropShadowEffect Color="#000000" Opacity="0.10" BlurRadius="8" ShadowDepth="1" Direction="270" />
             </Setter.Value>
         </Setter>
     </Style>
@@ -42,8 +45,11 @@
         </Setter>
     </Style>
 
+    <!-- 字号阶梯（4 档）：15 标题 / 13 数值 / 12 正文 / 11 辅助。
+         此前面板里散落 7/10/11/12/13/14/15/16 共 8 档，靠 1px 的差别硬撑层级，
+         结果是没有层级。 -->
     <Style x:Key="Style.TitleText" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="16" />
+        <Setter Property="FontSize" Value="15" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
     </Style>
@@ -54,7 +60,7 @@
     </Style>
 
     <Style x:Key="Style.CardTitleText" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontSize" Value="13" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
     </Style>
@@ -66,7 +72,7 @@
 
     <Style x:Key="Style.PercentText" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource Font.Numeric}" />
-        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontSize" Value="13" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
     </Style>
@@ -124,7 +130,7 @@
             <Setter.Value>
                 <ControlTemplate TargetType="ProgressBar">
                     <Grid ClipToBounds="True">
-                        <Border CornerRadius="3" Background="{DynamicResource Brush.Divider}" />
+                        <Border CornerRadius="3" Background="{DynamicResource Brush.TrackBackground}" />
                         <Border x:Name="PART_Indicator" CornerRadius="3" Background="{TemplateBinding Foreground}"
                                 HorizontalAlignment="Left">
                             <Border.Width>
@@ -141,7 +147,7 @@
     </Style>
 
     <Style TargetType="Button" x:Key="Style.PrimaryButton">
-        <Setter Property="Background" Value="{DynamicResource Brush.AccentDeepSeek}" />
+        <Setter Property="Background" Value="{DynamicResource Brush.Accent}" />
         <Setter Property="Foreground" Value="White" />
         <Setter Property="Padding" Value="14,7" />
         <Setter Property="BorderThickness" Value="0" />
@@ -198,7 +204,7 @@
         <Setter Property="Background" Value="{DynamicResource Brush.CardBackground}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
         <Setter Property="CaretBrush" Value="{DynamicResource Brush.TextPrimary}" />
-        <Setter Property="SelectionBrush" Value="{DynamicResource Brush.AccentDeepSeek}" />
+        <Setter Property="SelectionBrush" Value="{DynamicResource Brush.Accent}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.CardBorder}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Padding" Value="8,6" />
@@ -211,7 +217,7 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsKeyboardFocused" Value="True">
-                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Brush.AccentDeepSeek}" />
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.5" />
@@ -240,12 +246,12 @@
                     </StackPanel>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsChecked" Value="True">
-                            <Setter TargetName="Box" Property="Background" Value="{DynamicResource Brush.AccentDeepSeek}" />
-                            <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource Brush.AccentDeepSeek}" />
+                            <Setter TargetName="Box" Property="Background" Value="{DynamicResource Brush.Accent}" />
+                            <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
                             <Setter TargetName="Check" Property="Visibility" Value="Visible" />
                         </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource Brush.AccentDeepSeek}" />
+                            <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.5" />
@@ -267,18 +273,18 @@
                         <Grid Width="16" Height="16" VerticalAlignment="Center">
                             <Ellipse x:Name="Ring" Stroke="{DynamicResource Brush.CardBorder}" StrokeThickness="1"
                                      Fill="{DynamicResource Brush.CardBackground}" />
-                            <Ellipse x:Name="Dot" Width="8" Height="8" Fill="{DynamicResource Brush.AccentDeepSeek}"
+                            <Ellipse x:Name="Dot" Width="8" Height="8" Fill="{DynamicResource Brush.Accent}"
                                      Visibility="Collapsed" />
                         </Grid>
                         <ContentPresenter Margin="8,0,0,0" VerticalAlignment="Center" />
                     </StackPanel>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsChecked" Value="True">
-                            <Setter TargetName="Ring" Property="Stroke" Value="{DynamicResource Brush.AccentDeepSeek}" />
+                            <Setter TargetName="Ring" Property="Stroke" Value="{DynamicResource Brush.Accent}" />
                             <Setter TargetName="Dot" Property="Visibility" Value="Visible" />
                         </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Ring" Property="Stroke" Value="{DynamicResource Brush.AccentDeepSeek}" />
+                            <Setter TargetName="Ring" Property="Stroke" Value="{DynamicResource Brush.Accent}" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.5" />
@@ -360,7 +366,7 @@
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Brush.AccentDeepSeek}" />
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.5" />
@@ -383,7 +389,7 @@
                                 <RepeatButton Command="Slider.DecreaseLarge">
                                     <RepeatButton.Template>
                                         <ControlTemplate>
-                                            <Border Height="4" CornerRadius="2" Background="{DynamicResource Brush.AccentDeepSeek}" />
+                                            <Border Height="4" CornerRadius="2" Background="{DynamicResource Brush.Accent}" />
                                         </ControlTemplate>
                                     </RepeatButton.Template>
                                 </RepeatButton>
@@ -401,7 +407,7 @@
                                 <Thumb Width="14" Height="14" Cursor="Hand">
                                     <Thumb.Template>
                                         <ControlTemplate>
-                                            <Ellipse Fill="{DynamicResource Brush.AccentDeepSeek}" Stroke="White" StrokeThickness="1.5" />
+                                            <Ellipse Fill="{DynamicResource Brush.Accent}" Stroke="White" StrokeThickness="1.5" />
                                         </ControlTemplate>
                                     </Thumb.Template>
                                 </Thumb>

@@ -209,7 +209,7 @@
                 </Grid.ColumnDefinitions>
                 <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" Margin="4,0,16,0"
                            AutomationProperties.AutomationId="StatusMessageText"
-                           FontSize="12" Foreground="{DynamicResource Brush.AccentDeepSeek}"
+                           FontSize="12" Foreground="{DynamicResource Brush.Accent}"
                            TextWrapping="Wrap" />
                 <Button Grid.Column="1" Content="保存设置" Style="{StaticResource Style.PrimaryButton}"
                         MinWidth="120"
@@ -899,7 +899,7 @@
                     </StackPanel>
                     <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
                                Text="面板采用无边框自绘窗口以实现圆角和阴影，与 Windows 真实的云母/亚克力合成效果存在架构性冲突（详见 README「已知风险」），云母/亚克力在此显示为对应色调的半透明背景近似，而非系统级材质渲染。" />
-                    <TextBlock Style="{StaticResource StatusLabel}" Foreground="{DynamicResource Brush.AccentDeepSeek}"
+                    <TextBlock Style="{StaticResource StatusLabel}" Foreground="{DynamicResource Brush.Accent}"
                                Visibility="{Binding IsMaterialFullySupported, Converter={StaticResource InverseBoolToVis}}"
                                Text="当前系统版本/会话不满足 DWM 系统材质要求（需 Windows 11 22621+，且非远程桌面、非高对比度），以下材质选项均按纯色近似渲染。" />
 

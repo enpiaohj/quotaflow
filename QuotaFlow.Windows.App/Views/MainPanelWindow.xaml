@@ -18,6 +18,7 @@
         <conv:InverseBooleanToVisibilityConverter x:Key="InverseBoolToVis" />
         <conv:StringNotEmptyToVisibilityConverter x:Key="NotEmptyToVis" />
         <conv:StatusKindToBrushConverter x:Key="StatusKindToBrush" />
+        <conv:ProviderIdToBrushConverter x:Key="ProviderIdToBrush" />
 
         <Style x:Key="Style.RefreshButton" TargetType="Button" BasedOn="{StaticResource Style.IconButton}">
             <Setter Property="RenderTransformOrigin" Value="0.5,0.5" />
@@ -59,6 +60,19 @@
             </Style.Triggers>
         </Style>
 
+        <!-- 纯装饰/低频控件：静止时隐去，鼠标移到卡片上才出现。
+             只用于本身不占额外高度的元素（如标题行内的排序箭头）——用 Opacity 而非
+             Visibility 是为了布局稳定、鼠标进出不让卡片跳动，但这也意味着它省不了空间，
+             因此不要拿它去藏"占据独立一行"的内容，否则只会留下一块无法解释的空白。 -->
+        <Style x:Key="Style.CardSecondary" TargetType="FrameworkElement">
+            <Setter Property="Opacity" Value="0" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Border}}" Value="True">
+                    <Setter Property="Opacity" Value="1" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <!-- 额度窗口列表与卡片头部之间的间距，紧凑模式下减半。 -->
         <Style x:Key="Style.QuotaWindowList.Compactable" TargetType="ItemsControl">
             <Setter Property="Margin" Value="0,6,0,0" />
@@ -81,8 +95,22 @@
         </Style>
 
         <DataTemplate x:Key="ProviderCardTemplate" DataType="{x:Type vm:ProviderCardViewModel}">
-            <Border Style="{StaticResource Style.Card.Compactable}" Visibility="{Binding Visibility}">
-                <StackPanel>
+            <Border Style="{StaticResource Style.Card.Compactable}" Visibility="{Binding Visibility}"
+                    ClipToBounds="True">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 平台身份色条：让"这是哪个平台"不必读文字就能分辨。
+                         品牌色只表示身份，紧张程度由进度条与状态点的状态色表示，两者分工。
+                         负 Margin 是为了抵消卡片的 Padding，让色条贴住卡片左边缘。 -->
+                    <Border Grid.Column="0" Width="3" CornerRadius="1.5"
+                            Margin="-14,-11,10,-11" VerticalAlignment="Stretch"
+                            Background="{Binding ProviderId, Converter={StaticResource ProviderIdToBrush}}" />
+
+                    <StackPanel Grid.Column="1">
                     <!-- 卡片头部：状态点 + 名称 + 状态文案 + 排序箭头 + 展开按钮 -->
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -102,13 +130,14 @@
 
                         <!-- 卡片顺序：直接在面板上调整，点击即时生效并持久化，不用去设置页。
                              首位禁用"上移"、末位禁用"下移"（Style.IconButton 自带禁用变暗）。 -->
-                        <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="2,0,0,0">
-                            <Button Content="&#9650;" FontSize="7" Width="16" Height="13" Padding="0"
+                        <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="2,0,0,0"
+                                    Style="{StaticResource Style.CardSecondary}">
+                            <Button Content="&#9650;" FontSize="9" Width="16" Height="13" Padding="0"
                                     Style="{StaticResource Style.IconButton}"
                                     AutomationProperties.AutomationId="{Binding ProviderId, StringFormat=CardMoveUp_{0}}"
                                     Command="{Binding DataContext.MoveCardUpCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                     CommandParameter="{Binding}" ToolTip="上移" />
-                            <Button Content="&#9660;" FontSize="7" Width="16" Height="13" Padding="0" Margin="0,1,0,0"
+                            <Button Content="&#9660;" FontSize="9" Width="16" Height="13" Padding="0" Margin="0,1,0,0"
                                     Style="{StaticResource Style.IconButton}"
                                     AutomationProperties.AutomationId="{Binding ProviderId, StringFormat=CardMoveDown_{0}}"
                                     Command="{Binding DataContext.MoveCardDownCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
@@ -198,7 +227,10 @@
                                    FontSize="11" Foreground="{DynamicResource Brush.TextTertiary}" />
                     </StackPanel>
 
-                    <!-- 底部：更新时间 + 单卡刷新 -->
+                    <!-- 底部：该平台各自的更新时间 + 单卡刷新。
+                         曾试过"悬停才显示"，但 Opacity=0 会保留布局空间（避免卡片跳动），
+                         结果底部留下一块看不出原因的空白——既没省地方，又多了个视觉疑问。
+                         这一行携带的是每个平台各自的新鲜度，与头部那个全局时间不重复，值得常显。 -->
                     <Grid Margin="0,2,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -211,6 +243,7 @@
                                 ToolTip="刷新此平台" />
                     </Grid>
                 </StackPanel>
+                </Grid>
             </Border>
         </DataTemplate>
 
@@ -383,7 +416,7 @@
                             <Style TargetType="Button" BasedOn="{StaticResource Style.IconButton}">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsPinned}" Value="True">
-                                        <Setter Property="Foreground" Value="{DynamicResource Brush.AccentDeepSeek}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
@@ -511,7 +544,7 @@
                             <Style TargetType="Button" BasedOn="{StaticResource Style.CompactToolbarButton}">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsAlwaysOnTop}" Value="True">
-                                        <Setter Property="Foreground" Value="{DynamicResource Brush.AccentDeepSeek}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
@@ -527,7 +560,7 @@
                                     <DataTrigger Binding="{Binding IsPositionLocked}" Value="True">
                                         <Setter Property="Content" Value="&#128274;" />
                                         <Setter Property="ToolTip" Value="位置已锁定，点击解锁" />
-                                        <Setter Property="Foreground" Value="{DynamicResource Brush.AccentDeepSeek}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>

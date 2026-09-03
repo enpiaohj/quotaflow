@@ -4,28 +4,43 @@
     <!-- 浅色主题：明亮、克制，背景保持干净，不使用大面积高饱和渐变。 -->
 
     <Color x:Key="Color.Background">#FFF3F3F3</Color>
-    <Color x:Key="Color.PanelBackground">#FCFFFFFF</Color>
+    <!-- 面板底层用浅灰、卡片用纯白，靠明度差分层。
+         此前两者都是白色（#FCFFFFFF / #FFFFFFFF），卡片全靠 1px 边框才看得出边界；
+         一旦去掉边框，卡片就与面板融为一体。深色主题本来就有这层差（2B2B2B / 323232）。 -->
+    <Color x:Key="Color.PanelBackground">#FCEBEBEB</Color>
     <Color x:Key="Color.CardBackground">#FFFFFFFF</Color>
     <Color x:Key="Color.CardBorder">#1F000000</Color>
+    <!-- 卡片描边独立于 CardBorder（后者还给面板外壳用）：
+         浅色下白卡需要一条 hairline 收边，深色下暗底自带边界感、加描边反而多余。
+         用一个专门的 token 而不是共用，才能让两套主题各自取舍。 -->
+    <Color x:Key="Color.CardStroke">#14000000</Color>
     <Color x:Key="Color.TextPrimary">#E4000000</Color>
-    <Color x:Key="Color.TextSecondary">#99000000</Color>
-    <Color x:Key="Color.TextTertiary">#66000000</Color>
+    <Color x:Key="Color.TextSecondary">#A6000000</Color>
+    <Color x:Key="Color.TextTertiary">#78000000</Color>
     <Color x:Key="Color.Divider">#14000000</Color>
     <Color x:Key="Color.HoverOverlay">#0A000000</Color>
 
-    <Color x:Key="Color.StatusGood">#FF0F9D58</Color>
-    <Color x:Key="Color.StatusWarn">#FFF9A825</Color>
-    <Color x:Key="Color.StatusBad">#FFD93025</Color>
+    <Color x:Key="Color.StatusGood">#FF2E9E6B</Color>
+    <Color x:Key="Color.StatusWarn">#FFE0952B</Color>
+    <Color x:Key="Color.StatusBad">#FFD1544B</Color>
     <Color x:Key="Color.StatusUnknown">#FF8A8A8A</Color>
+
+    <!-- 通用强调色：按钮高亮、选中态、链接。此前代码里借用 AccentDeepSeek 充当此角色
+         （被引用 17 次），一个平台品牌色干通用色的活，语义是乱的；品牌色应当只表示平台身份。 -->
+    <Color x:Key="Color.Accent">#FF3B6FD4</Color>
+    <!-- 进度条轨道：比 Divider 略深，否则浅色主题下看不出条的总长度。 -->
+    <Color x:Key="Color.TrackBackground">#26000000</Color>
 
     <Color x:Key="Color.AccentClaude">#FFD97757</Color>
     <Color x:Key="Color.AccentCodex">#FF10A37F</Color>
     <Color x:Key="Color.AccentMiniMax">#FFE1306C</Color>
+    <Color x:Key="Color.AccentAlibaba">#FFFF6A00</Color>
     <Color x:Key="Color.AccentDeepSeek">#FF4D6BFE</Color>
 
     <SolidColorBrush x:Key="Brush.Background" Color="{StaticResource Color.Background}" />
     <SolidColorBrush x:Key="Brush.PanelBackground" Color="{StaticResource Color.PanelBackground}" />
     <SolidColorBrush x:Key="Brush.CardBackground" Color="{StaticResource Color.CardBackground}" />
+    <SolidColorBrush x:Key="Brush.CardStroke" Color="{StaticResource Color.CardStroke}" />
     <SolidColorBrush x:Key="Brush.CardBorder" Color="{StaticResource Color.CardBorder}" />
     <SolidColorBrush x:Key="Brush.TextPrimary" Color="{StaticResource Color.TextPrimary}" />
     <SolidColorBrush x:Key="Brush.TextSecondary" Color="{StaticResource Color.TextSecondary}" />
@@ -38,9 +53,12 @@
     <SolidColorBrush x:Key="Brush.StatusBad" Color="{StaticResource Color.StatusBad}" />
     <SolidColorBrush x:Key="Brush.StatusUnknown" Color="{StaticResource Color.StatusUnknown}" />
 
+    <SolidColorBrush x:Key="Brush.Accent" Color="{StaticResource Color.Accent}" />
+    <SolidColorBrush x:Key="Brush.TrackBackground" Color="{StaticResource Color.TrackBackground}" />
     <SolidColorBrush x:Key="Brush.AccentClaude" Color="{StaticResource Color.AccentClaude}" />
     <SolidColorBrush x:Key="Brush.AccentCodex" Color="{StaticResource Color.AccentCodex}" />
     <SolidColorBrush x:Key="Brush.AccentMiniMax" Color="{StaticResource Color.AccentMiniMax}" />
+    <SolidColorBrush x:Key="Brush.AccentAlibaba" Color="{StaticResource Color.AccentAlibaba}" />
     <SolidColorBrush x:Key="Brush.AccentDeepSeek" Color="{StaticResource Color.AccentDeepSeek}" />
 
 </ResourceDictionary>

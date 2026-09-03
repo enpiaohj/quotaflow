@@ -52,8 +52,14 @@ public partial class MainPanelWindow : Window
     /// （协调器套用位置、自适应高度），不当作用户手动调整。</summary>
     private bool _applyingSizeProgrammatically;
 
-    /// <summary>自适应高度的上限占工作区高度的比例。留出余量，避免面板顶到屏幕边缘。</summary>
-    private const double AutoHeightWorkAreaRatio = 0.8;
+    /// <summary>
+    /// 自适应高度的上限占工作区高度的比例。
+    ///
+    /// originally 0.8——在 6 个平台、工作区 1255px 的实机上，上限正好卡在 1004px，
+    /// 面板停在这个数、最后一张卡片被截掉 6%，看起来像"自适应算错了"，实际是撞了上限。
+    /// 面板本来就贴着任务栏、上方还有 8px 边距，0.9 仍留得出余量，却能多容纳一个平台。
+    /// </summary>
+    private const double AutoHeightWorkAreaRatio = 0.9;
 
     /// <summary>拖边框调整尺寸进行中（WM_SIZING 与 WM_EXITSIZEMOVE 之间）。</summary>
     private bool _userSizing;
