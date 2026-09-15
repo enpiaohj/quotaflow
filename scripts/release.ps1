@@ -2,6 +2,8 @@
 #
 # Produces:
 #   publish/win-x64/QuotaFlow-vX.Y.Z-win-x64.exe        (versioned single-file exe)
+#   release/vX.Y.Z/QuotaFlow-vX.Y.Z-win-x64.exe         (same exe, staged into the release dir)
+#   release/vX.Y.Z/QuotaFlow-vX.Y.Z-win-x64.exe.sha256  (sha256 of the exe)
 #   release/vX.Y.Z/QuotaFlow-vX.Y.Z-win-x64.zip         (zip containing only the exe)
 #   release/vX.Y.Z/QuotaFlow-vX.Y.Z-win-x64.zip.sha256  (sha256 of the zip)
 #
@@ -29,7 +31,22 @@ Write-Output "Version: $version"
 $exeName = "QuotaFlow-v$version-$rid.exe"
 $zipName = "QuotaFlow-v$version-$rid.zip"
 $releaseDir = Join-Path $root "release\v$version"
+$releaseExePath = Join-Path $releaseDir $exeName
 $zipPath = Join-Path $releaseDir $zipName
+
+function Write-Sha256Sidecar {
+    param([string]$FilePath)
+    $stream = [System.IO.File]::OpenRead($FilePath)
+    try {
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $bytes = $sha.ComputeHash($stream)
+        } finally { $sha.Dispose() }
+    } finally { $stream.Dispose() }
+    $hash = ([System.BitConverter]::ToString($bytes)).Replace('-', '').ToLower()
+    Set-Content -Path "$FilePath.sha256" -Value "$hash *$(Split-Path $FilePath -Leaf)" -Encoding ASCII
+    return $hash
+}
 
 # --- publish (single-file, self-contained, compressed, natives inlined) ---
 & dotnet publish $project -c Release -r $rid --self-contained true `
@@ -53,20 +70,16 @@ if (-not (Test-Path $plainExe)) { throw "Expected publish output $plainExe not f
 $versionedExe = Join-Path $publishDir $exeName
 Copy-Item $plainExe $versionedExe -Force
 
-# --- zip (only the exe) ---
+# --- stage both the bare exe and a zip into the release dir (sha256 file uses .NET directly;
+#     Get-FileHash is unavailable in some PS environments) ---
 New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+
+Copy-Item $versionedExe $releaseExePath -Force
+$exeHash = Write-Sha256Sidecar -FilePath $releaseExePath
+Write-Output "WROTE: $releaseExePath"
+Write-Output "SHA256: $exeHash"
+
 Compress-Archive -Path $versionedExe -DestinationPath $zipPath -Force
-
-# --- sha256 sidecar (use .NET directly; Get-FileHash is unavailable in some PS environments) ---
-$stream = [System.IO.File]::OpenRead($zipPath)
-try {
-    $sha = [System.Security.Cryptography.SHA256]::Create()
-    try {
-        $bytes = $sha.ComputeHash($stream)
-    } finally { $sha.Dispose() }
-} finally { $stream.Dispose() }
-$hash = ([System.BitConverter]::ToString($bytes)).Replace('-', '').ToLower()
-Set-Content -Path "$zipPath.sha256" -Value "$hash *$(Split-Path $zipPath -Leaf)" -Encoding ASCII
-
+$zipHash = Write-Sha256Sidecar -FilePath $zipPath
 Write-Output "WROTE: $zipPath"
-Write-Output "SHA256: $hash"
+Write-Output "SHA256: $zipHash"
