@@ -84,6 +84,8 @@ public static class SettingsSnapshotBuilder
         baseline.CodexEndpointOverride = NullIfBlank(edits.CodexEndpointOverride);
         baseline.MiniMaxEndpointOverride = NullIfBlank(edits.MiniMaxEndpointOverride);
         baseline.DeepSeekEndpointOverride = NullIfBlank(edits.DeepSeekEndpointOverride);
+        baseline.VolcengineArkRegion = NullIfBlank(edits.VolcengineArkRegion);
+        baseline.VolcengineArkPlanDisplayNameOverride = NullIfBlank(edits.VolcengineArkPlanDisplayNameOverride);
 
         baseline.HotkeyEnabled = edits.HotkeyEnabled;
         baseline.HotkeyModifiers = edits.HotkeyModifiers;

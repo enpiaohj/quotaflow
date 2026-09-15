@@ -584,6 +584,83 @@
                 </Expander>
             </Border>
 
+            <!-- 火山方舟 Coding Plan（+ 预留 Agent Plan）：AK/SK + Signature V4，不是 Bearer Token -->
+            <Border Style="{StaticResource Style.Card}" Margin="0,0,0,10">
+                <Expander Style="{StaticResource Style.Collapsible}">
+                    <Expander.Header>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="火山方舟 Coding Plan" FontSize="13" FontWeight="SemiBold"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource Brush.TextPrimary}" />
+                            <CheckBox Grid.Column="1" Content="显示" Margin="0,0,14,0" VerticalAlignment="Center"
+                                      AutomationProperties.AutomationId="ShowVolcengineArkOnPanelCheckBox"
+                                      ToolTip="取消勾选后该平台不在面板上显示（配置和数据都保留）"
+                                      IsChecked="{Binding ShowVolcengineArkOnPanel}" />
+                            <TextBlock Grid.Column="2" Text="{Binding VolcengineArkConfiguredText}" FontSize="12"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource Brush.TextSecondary}" />
+                        </Grid>
+                    </Expander.Header>
+                    <StackPanel>
+                    <TextBlock Style="{StaticResource StatusLabel}" Margin="0,0,0,8" TextWrapping="Wrap"
+                               Text="套餐：自动检测（官方接口不返回 Lite/Pro 套餐类型，识别到额度数据即视为已订阅）。额度查询走火山引擎控制面 OpenAPI，用 Access Key ID / Secret Access Key 做签名，不是 API Key。建议创建专用 IAM 子用户，仅授予读取方舟套餐/额度所需的最小权限。" />
+
+                    <TextBlock Text="Access Key ID" Style="{StaticResource FieldLabel}" Margin="0,0,0,4" />
+                    <TextBox Text="{Binding VolcengineArkAccessKeyId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             AutomationProperties.AutomationId="VolcengineArkAccessKeyIdBox" />
+
+                    <TextBlock Text="Secret Access Key" Style="{StaticResource FieldLabel}" Margin="0,8,0,4" />
+                    <Grid>
+                        <TextBox Style="{StaticResource SecretInputBox}"
+                                 AutomationProperties.AutomationId="VolcengineArkSecretKeyBox"
+                                 Text="{Binding VolcengineArkSecretKeyDisplayText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 IsReadOnly="{Binding VolcengineArkSecretKeyIsReadOnly}" />
+                        <Button Style="{StaticResource EyeButton}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                Margin="0,0,4,0" Content="&#128065;" Visibility="{Binding VolcengineArkEyeVisibility}"
+                                Command="{Binding ToggleRevealVolcengineArkSecretCommand}"
+                                ToolTip="验证身份后查看明文 Secret Access Key" />
+                    </Grid>
+                    <TextBlock Text="Region" Style="{StaticResource FieldLabel}" Margin="0,8,0,4" />
+                    <TextBox Text="{Binding VolcengineArkRegion}" AutomationProperties.AutomationId="VolcengineArkRegionBox" />
+                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap" Text="留空使用默认：cn-beijing" />
+
+                    <TextBlock Style="{StaticResource StatusLabel}" Margin="0,8,0,0" TextWrapping="Wrap"
+                               Text="默认显示掩码；点击眼睛并验证身份后可查看明文并编辑。保存后立即写入 Windows 凭据管理器，Secret Access Key 不会出现在日志或配置文件中。" />
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <Button Content="保存" Style="{StaticResource Style.PrimaryButton}" Margin="0,0,8,0"
+                                AutomationProperties.AutomationId="SaveVolcengineArkButton"
+                                Command="{Binding SaveVolcengineArkCommand}" />
+                        <Button Content="清除凭据" Style="{StaticResource Style.SecondaryButton}" Margin="0,0,8,0"
+                                AutomationProperties.AutomationId="ClearVolcengineArkButton"
+                                Command="{Binding ClearVolcengineArkCommand}" />
+                        <Button Content="测试连接" Style="{StaticResource Style.SecondaryButton}"
+                                AutomationProperties.AutomationId="TestVolcengineArkConnectionButton"
+                                Command="{Binding TestVolcengineArkConnectionCommand}"
+                                IsEnabled="{Binding IsVolcengineArkTestingConnection, Converter={StaticResource InverseBoolConverter}}" />
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource StatusLabel}" Margin="0,6,0,0" TextWrapping="Wrap"
+                               Text="{Binding VolcengineArkTestResultText}" />
+
+                    <Expander Style="{StaticResource Style.Collapsible}" Margin="0,12,0,0">
+                        <Expander.Header>
+                            <TextBlock Text="高级" Style="{StaticResource AdvancedLabel}" />
+                        </Expander.Header>
+                        <StackPanel>
+                            <TextBlock Text="套餐显示名覆盖（留空显示“Coding Plan”）" Style="{StaticResource FieldLabel}" />
+                            <TextBox Style="{StaticResource EndpointBox}" Text="{Binding VolcengineArkPlanDisplayNameOverride}" />
+                            <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
+                                       Text="官方接口不返回套餐类型，确认自己的套餐后可在此手动填写更准确的名称，如“Coding Plan Pro”，仅影响展示。" />
+                        </StackPanel>
+                    </Expander>
+                    </StackPanel>
+                </Expander>
+            </Border>
+
             <!-- 自定义平台 -->
             <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
                 <StackPanel>

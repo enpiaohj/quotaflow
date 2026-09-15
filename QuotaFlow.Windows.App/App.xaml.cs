@@ -208,13 +208,22 @@ public partial class App : Application
             () => _credentialStore.TryReadLarge(SettingsViewModel.TokenPlanCookieKeyName),
             () => _credentialStore.TryRead(SettingsViewModel.TokenPlanSecTokenKeyName, useUtf8: true));
 
+        // 火山方舟 Coding Plan（+ 预留 Agent Plan）。原生 Provider，不是自定义平台的一个配置项——
+        // 额度查询走火山引擎控制面 OpenAPI（open.volcengineapi.com），要用 AK/SK 做 Signature V4
+        // 变体签名，不是简单的 Bearer Token。AK/SK 同样只走 SecureCredentialStore，绝不落盘。
+        yield return new VolcengineArkProvider(_httpClient,
+            () => _credentialStore.TryRead(SettingsViewModel.VolcengineArkAccessKeyIdKeyName),
+            () => _credentialStore.TryRead(SettingsViewModel.VolcengineArkSecretAccessKeyKeyName),
+            settings.VolcengineArkRegion,
+            settings.VolcengineArkPlanDisplayNameOverride);
+
         // 设置页手动添加的自定义平台（OpenCode GO 等）。Id 固定为 custom-{n}，凭据键由此派生；
         // 防御性跳过配置残缺（Id/地址为空、撞内置 Id、重复自定义 Id、一个额度窗口都没有）的条目，
         // 不会让一条坏配置拖垮其余平台。
         // 注意：QuotaWindows 为空不代表"v1.0.5 旧格式尚未迁移"——AppSettingsStore.Load() 已经在
         // 读盘时就地完成了迁移，这里读到的 settings 永远是迁移后的新格式；空列表只可能是配置文件
         // 被手改坏，理应跳过。
-        var builtInIds = new HashSet<string> { "claude", "codex", "minimax", "deepseek" };
+        var builtInIds = new HashSet<string> { "claude", "codex", "minimax", "deepseek", "volcengine-ark" };
         var seenIds = new HashSet<string>();
         foreach (var custom in settings.CustomPlatforms ?? [])
         {
@@ -350,7 +359,7 @@ public partial class App : Application
         var currentSettings = _settingsStore.Load();
         var settingsViewModel = new SettingsViewModel(_settingsStore, _credentialStore, _cache, currentSettings,
             _presentation, applyHotkeySettings: ApplyHotkeySettings,
-            collectDiagnostics: CollectDiagnostics);
+            collectDiagnostics: CollectDiagnostics, httpClient: _httpClient);
         settingsViewModel.SettingsSaved += (_, newSettings) =>
         {
             _themeManager.Apply(newSettings.Theme);

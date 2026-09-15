@@ -31,6 +31,9 @@ public sealed class SettingsPageEdits
     public string? MiniMaxEndpointOverride { get; set; }
     public string? DeepSeekEndpointOverride { get; set; }
 
+    public string? VolcengineArkRegion { get; set; }
+    public string? VolcengineArkPlanDisplayNameOverride { get; set; }
+
     public bool HotkeyEnabled { get; set; } = true;
     public HotkeyModifiers HotkeyModifiers { get; set; } = HotkeyModifiers.Alt;
     public string HotkeyKey { get; set; } = "Z";

@@ -16,6 +16,29 @@
 
 ### Removed
 
+## [0.12.0] - 2026-09-15
+
+### Added
+
+**新增原生 Provider：火山方舟 Coding Plan（预留 Agent Plan）。**
+
+以 `volcengine-ark` 为 Provider ID 加入内置平台，不是"自定义平台"配置项——额度查询走火山引擎
+**控制面 OpenAPI**（`open.volcengineapi.com`，`Action=GetCodingPlanUsage`，未订阅时回退探测
+`GetAFPUsage`），要用 Access Key ID / Secret Access Key 做 Signature V4 的火山变体签名（固定
+Header 顺序、`HMAC-SHA256` 算法名、Credential Scope 以 `request` 结尾），不是简单的 Bearer
+Token，因此需要一套独立的签名与错误映射逻辑（新增 `VolcengineSigner` / `VolcengineArkProvider`）。
+
+- 设置页新增"火山方舟 Coding Plan"卡片：Access Key ID（明文）/ Secret Access Key（掩码 +
+  Windows Hello 验证后可查看）/ Region（默认 `cn-beijing`）/ 套餐显示名覆盖（官方接口不返回
+  Lite/Pro 套餐类型，默认显示通用的"Coding Plan"，不强行显示 Pro）/ 测试连接按钮。
+- 按 `Level` 字段（`session`/`weekly`/`monthly`）匹配额度窗口，不按数组下标——服务端调整顺序
+  不会导致窗口错位；未知 `Level` 原样跳过，不猜测归属。
+- `Percent` 是官方接口给出的**已使用**百分比；`ResetTime` 按数值量级自动判别秒/毫秒
+  （Coding Plan 是秒，Agent Plan 是毫秒，两者不统一）。
+- 密钥只经 `SecureCredentialStore` 写入 Windows 凭据管理器，绝不落盘、绝不写日志；401/403/
+  签名错误/时钟偏差/限流/无套餐订阅等失败场景分别映射成中文引导文案，不直接展示原始 HTTP 状态码。
+- 复用现有统一刷新机制（默认 5 分钟）与错误分类器，未新增独立 Timer；单个平台失败不影响其它平台。
+
 ## [0.11.1] - 2026-09-03
 
 ### Changed

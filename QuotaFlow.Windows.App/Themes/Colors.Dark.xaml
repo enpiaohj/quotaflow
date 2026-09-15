@@ -29,6 +29,7 @@
     <Color x:Key="Color.AccentMiniMax">#FFF04E86</Color>
     <Color x:Key="Color.AccentAlibaba">#FFFF8B3D</Color>
     <Color x:Key="Color.AccentDeepSeek">#FF6C86FF</Color>
+    <Color x:Key="Color.AccentVolcengine">#FFFF5A47</Color>
 
     <SolidColorBrush x:Key="Brush.Background" Color="{StaticResource Color.Background}" />
     <SolidColorBrush x:Key="Brush.PanelBackground" Color="{StaticResource Color.PanelBackground}" />
@@ -53,5 +54,6 @@
     <SolidColorBrush x:Key="Brush.AccentMiniMax" Color="{StaticResource Color.AccentMiniMax}" />
     <SolidColorBrush x:Key="Brush.AccentAlibaba" Color="{StaticResource Color.AccentAlibaba}" />
     <SolidColorBrush x:Key="Brush.AccentDeepSeek" Color="{StaticResource Color.AccentDeepSeek}" />
+    <SolidColorBrush x:Key="Brush.AccentVolcengine" Color="{StaticResource Color.AccentVolcengine}" />
 
 </ResourceDictionary>

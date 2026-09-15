@@ -9,7 +9,7 @@
 
 ## 核心功能
 
-- **内置平台**：Claude、Codex、MiniMax、DeepSeek、阿里云百炼 Token Plan（个人版）。
+- **内置平台**：Claude、Codex、MiniMax、DeepSeek、阿里云百炼 Token Plan（个人版）、火山方舟 Coding Plan。
 - **自定义平台**：运行时添加任意额度接口，配置取值路径即可，无需改代码或发版。
 - **额度窗口**：按平台展示多个时间窗口的剩余/已用百分比与重置倒计时；余额型平台展示金额。
 - **跨设备迁移**：口令加密的备份包导出/导入（PBKDF2 + AES-256-GCM），导出前需身份验证。
@@ -18,7 +18,7 @@
 
 ## 当前版本
 
-`v0.10.2` — 版本号定义于 `QuotaFlow.Windows.App/QuotaFlow.Windows.App.csproj` 的 `<Version>`。
+`v0.12.0` — 版本号定义于 `QuotaFlow.Windows.App/QuotaFlow.Windows.App.csproj` 的 `<Version>`。
 
 仍处于 `0.x`：走向 1.0 的条件见 `docs/2026-09-01-QuotaFlow后续优化计划-v1.0.md`。
 
@@ -41,7 +41,7 @@ QuotaFlow/                         （仓库根 = 项目根）
 ├── QuotaFlow.Windows.Core/        平台无关的业务逻辑（可单独跑单测，不依赖 WPF）
 │   ├── Models/                    ProviderSnapshot / QuotaWindow / BalanceMetric / 枚举
 │   ├── Authentication/            Claude/Codex 本机 OAuth 凭据读取
-│   ├── Providers/                 四个平台的查询实现 + IQuotaProvider
+│   ├── Providers/                 各内置平台的查询实现 + IQuotaProvider
 │   └── Services/                  SecureCredentialStore / LocalCache / RefreshCoordinator / AppSettingsStore
 ├── QuotaFlow.Windows.App/         WPF 宿主：托盘、面板、设置页（ViewModels/Views）
 ├── QuotaFlow.Windows.Tests/       xUnit 单元测试
@@ -106,6 +106,20 @@ dotnet publish QuotaFlow.Windows.App/QuotaFlow.Windows.App.csproj -c Release -r 
 
 - 不读取任何本机 CLI 凭据文件；由用户在设置页手动填写 API Key。
 - Key 只通过 Windows 凭据管理器（`Advapi32.dll` 的 `CredWrite`/`CredRead`/`CredDelete`，`CRED_TYPE_GENERIC`）存取，目标名分别为 `QuotaFlow:minimax:ApiKey` / `QuotaFlow:deepseek:ApiKey`，不写入 `settings.json`、缓存文件、日志或测试代码。
+
+### 火山方舟 Coding Plan
+
+- 额度查询走火山引擎**控制面 OpenAPI**（`open.volcengineapi.com`，`Action=GetCodingPlanUsage`，
+  账号未订阅时回退探测 `GetAFPUsage`），不是推理网关（`ark.cn-beijing.volces.com`）的 Bearer
+  Token，所以用 Access Key ID / Secret Access Key 做 Signature V4 的火山变体签名，而不是简单的
+  API Key 请求头。
+- Access Key ID / Secret Access Key 同样只经 Windows 凭据管理器存取，目标名
+  `QuotaFlow:volcengine-ark:AccessKeyId` / `QuotaFlow:volcengine-ark:SecretAccessKey`；Secret
+  Access Key 不出现在日志、异常消息或配置文件中。
+- 该控制面网关没有面向个人开发者的公开文档；签名算法与响应字段依据两份独立开源实现交叉核对：
+  [lordqyxz/dsh-ark-quota](https://github.com/lordqyxz/dsh-ark-quota)（MIT）与
+  [farion1231/cc-switch](https://github.com/farion1231/cc-switch)（MIT）。官方接口不返回
+  Lite/Pro 套餐类型，因此不会在界面上臆造"Pro"字样，仅在用户手动确认后可自定义显示名。
 
 ### 通用安全约定
 

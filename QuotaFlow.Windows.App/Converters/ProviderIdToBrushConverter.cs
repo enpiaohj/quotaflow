@@ -27,6 +27,7 @@ public sealed class ProviderIdToBrushConverter : IValueConverter
             "minimax" => "Brush.AccentMiniMax",
             "deepseek" => "Brush.AccentDeepSeek",
             "alibaba-tokenplan" => "Brush.AccentAlibaba",
+            "volcengine-ark" => "Brush.AccentVolcengine",
             _ => "Brush.TextTertiary",
         };
 

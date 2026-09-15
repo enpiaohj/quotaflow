@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Net.Http;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Threading;
@@ -32,6 +33,14 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     /// <summary>登录时从控制台页面抓到的 SEC_TOKEN 的凭据管理器键名（同样 UTF-8 存储）。</summary>
     public const string TokenPlanSecTokenKeyName = "alibaba:tokenplan:secToken";
+
+    /// <summary>火山方舟 Access Key ID 的凭据管理器键名。ID 本身不是 Secret，但仍然只走
+    /// <see cref="SecureCredentialStore"/>——和 Secret Access Key 存在同一个安全边界里，避免
+    /// 界面上出现"一半在凭据管理器、一半在明文 JSON"这种更难审计的混合状态。</summary>
+    public const string VolcengineArkAccessKeyIdKeyName = "volcengine-ark:AccessKeyId";
+
+    /// <summary>火山方舟 Secret Access Key 的凭据管理器键名。</summary>
+    public const string VolcengineArkSecretAccessKeyKeyName = "volcengine-ark:SecretAccessKey";
 
     private readonly AppSettingsStore _settingsStore;
     private readonly SecureCredentialStore _credentialStore;
@@ -140,6 +149,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _showMiniMaxOnPanel = true;
     [ObservableProperty] private bool _showDeepSeekOnPanel = true;
     [ObservableProperty] private bool _showTokenPlanOnPanel = true;
+    [ObservableProperty] private bool _showVolcengineArkOnPanel = true;
 
     /// <summary>
     /// 本页是否有尚未保存的改动。
@@ -181,6 +191,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         yield return ("minimax", ShowMiniMaxOnPanel);
         yield return ("deepseek", ShowDeepSeekOnPanel);
         yield return ("alibaba-tokenplan", ShowTokenPlanOnPanel);
+        yield return ("volcengine-ark", ShowVolcengineArkOnPanel);
     }
 
     /// <summary>设置页"自定义平台"的可编辑行：新增/编辑的定义在保存前也驻留于此。</summary>
@@ -336,6 +347,46 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public Visibility DeepSeekEyeVisibility => IsDeepSeekConfigured ? Visibility.Visible : Visibility.Collapsed;
 
+    // ---- 火山方舟 Coding Plan：AK/SK（火山引擎控制面 OpenAPI Signature V4，不是 Bearer Token）----
+    // Access Key ID 不是 Secret，直接明文展示/编辑，不走掩码/眼睛那套；但仍然只存 Windows 凭据
+    // 管理器（不落盘进设置 JSON），与 Secret Access Key 处在同一个安全边界里。
+    // Secret Access Key 走与 MiniMax/DeepSeek 完全相同的掩码 + Windows Hello 展开模式。
+
+    [ObservableProperty] private string _volcengineArkAccessKeyId = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(VolcengineArkSecretKeyDisplayText))]
+    [NotifyPropertyChangedFor(nameof(VolcengineArkSecretKeyIsReadOnly))]
+    [NotifyPropertyChangedFor(nameof(VolcengineArkEyeVisibility))]
+    private bool _isVolcengineArkConfigured;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(VolcengineArkSecretKeyDisplayText))]
+    [NotifyPropertyChangedFor(nameof(VolcengineArkSecretKeyIsReadOnly))]
+    private bool _isVolcengineArkSecretKeyRevealed;
+
+    [ObservableProperty] private string _volcengineArkSecretKeyDisplayText = string.Empty;
+
+    public bool VolcengineArkSecretKeyIsReadOnly => IsVolcengineArkConfigured && !IsVolcengineArkSecretKeyRevealed;
+
+    public Visibility VolcengineArkEyeVisibility => IsVolcengineArkConfigured ? Visibility.Visible : Visibility.Collapsed;
+
+    [ObservableProperty] private string _volcengineArkConfiguredText = "未配置";
+
+    /// <summary>Region 留空即使用内置默认（cn-beijing），设置页占位符会提示这一点。</summary>
+    [ObservableProperty] private string _volcengineArkRegion = string.Empty;
+
+    /// <summary>
+    /// 套餐显示名覆盖。官方接口不返回 Lite/Pro 套餐类型，无法自动识别，设置页默认展示通用的
+    /// "Coding Plan"；用户确认自己的套餐类型后可以在这里手动填一个更准确的名字，纯展示用途。
+    /// </summary>
+    [ObservableProperty] private string _volcengineArkPlanDisplayNameOverride = string.Empty;
+
+    /// <summary>"测试连接"命令运行中，避免重复点击并发发起多个请求。</summary>
+    [ObservableProperty] private bool _isVolcengineArkTestingConnection;
+
+    [ObservableProperty] private string _volcengineArkTestResultText = string.Empty;
+
     // ---- 阿里云百炼 Token Plan（个人版）：WebView2 一键登录 ----
     // 登录态（Console Cookie）由 AlibabaLoginWindow 用 WebView2 自动抓取并写入 Windows 凭据管理器，
     // 用户不需要也看不到 Cookie 明文。这里只暴露"是否已登录"和"一键登录 / 清除登录态"两个入口。
@@ -412,12 +463,19 @@ public sealed partial class SettingsViewModel : ObservableObject
     public IRelayCommand SaveGeneralSettingsCommand { get; }
     public IAsyncRelayCommand ToggleRevealMiniMaxKeyCommand { get; }
     public IAsyncRelayCommand ToggleRevealDeepSeekKeyCommand { get; }
+    public IRelayCommand SaveVolcengineArkCommand { get; }
+    public IRelayCommand ClearVolcengineArkCommand { get; }
+    public IAsyncRelayCommand ToggleRevealVolcengineArkSecretCommand { get; }
+    public IAsyncRelayCommand TestVolcengineArkConnectionCommand { get; }
+
+    private readonly HttpClient? _httpClient;
 
     public SettingsViewModel(AppSettingsStore settingsStore, SecureCredentialStore credentialStore, LocalCache cache,
         AppSettings current, IWindowPresentationCoordinator presentation,
         Func<string, Task<IdentityVerificationResult>>? verifyIdentity = null,
         Func<DiagnosticInput>? collectDiagnostics = null,
-        Func<AppSettings, bool>? applyHotkeySettings = null)
+        Func<AppSettings, bool>? applyHotkeySettings = null,
+        HttpClient? httpClient = null)
     {
         _settingsStore = settingsStore;
         _credentialStore = credentialStore;
@@ -426,6 +484,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _verifyIdentity = verifyIdentity ?? IdentityVerifier.VerifyAsync;
         _collectDiagnostics = collectDiagnostics;
         _applyHotkeySettings = applyHotkeySettings ?? (_ => true);
+        _httpClient = httpClient;
 
         // 面板顶部模式切换按钮、或另一个已打开的设置窗口（理论上不会同时开两个，防御性处理）
         // 改了显示设置时，这里跟着刷新——用空属性名让 WPF 把绑定到本 ViewModel 的所有属性都
@@ -444,6 +503,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         _codexEndpointOverride = current.CodexEndpointOverride ?? string.Empty;
         _miniMaxEndpointOverride = current.MiniMaxEndpointOverride ?? string.Empty;
         _deepSeekEndpointOverride = current.DeepSeekEndpointOverride ?? string.Empty;
+        _volcengineArkRegion = current.VolcengineArkRegion ?? string.Empty;
+        _volcengineArkPlanDisplayNameOverride = current.VolcengineArkPlanDisplayNameOverride ?? string.Empty;
         _proxyMode = current.ProxyMode;
         _proxyAddress = current.ProxyAddress ?? string.Empty;
 
@@ -454,6 +515,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _showMiniMaxOnPanel = !hidden.Contains("minimax");
         _showDeepSeekOnPanel = !hidden.Contains("deepseek");
         _showTokenPlanOnPanel = !hidden.Contains("alibaba-tokenplan");
+        _showVolcengineArkOnPanel = !hidden.Contains("volcengine-ark");
         _hotkeyEnabled = current.HotkeyEnabled;
         _hotkeyModifiers = current.HotkeyModifiers;
         _hotkeyKey = current.HotkeyKey;
@@ -484,6 +546,10 @@ public sealed partial class SettingsViewModel : ObservableObject
         SaveGeneralSettingsCommand = new RelayCommand(SaveGeneralSettings);
         ToggleRevealMiniMaxKeyCommand = new AsyncRelayCommand(ToggleRevealMiniMaxKeyAsync);
         ToggleRevealDeepSeekKeyCommand = new AsyncRelayCommand(ToggleRevealDeepSeekKeyAsync);
+        SaveVolcengineArkCommand = new RelayCommand(SaveVolcengineArk);
+        ClearVolcengineArkCommand = new RelayCommand(ClearVolcengineArk);
+        ToggleRevealVolcengineArkSecretCommand = new AsyncRelayCommand(ToggleRevealVolcengineArkSecretAsync);
+        TestVolcengineArkConnectionCommand = new AsyncRelayCommand(TestVolcengineArkConnectionAsync);
         AddCustomPlatformCommand = new RelayCommand(AddCustomPlatform);
         AddOpenCodeGoTemplateCommand = new RelayCommand(AddOpenCodeGoTemplate);
         EnterTrayModeCommand = new AsyncRelayCommand(_presentation.EnterTrayPopupAsync);
@@ -516,6 +582,9 @@ public sealed partial class SettingsViewModel : ObservableObject
         // 已配置的 Key 默认以掩码呈现，避免打开设置页就直接把明文带出来。
         MiniMaxKeyDisplayText = IsMiniMaxConfigured ? KeyMask : string.Empty;
         DeepSeekKeyDisplayText = IsDeepSeekConfigured ? KeyMask : string.Empty;
+        VolcengineArkSecretKeyDisplayText = IsVolcengineArkConfigured ? KeyMask : string.Empty;
+        // Access Key ID 不是 Secret，直接明文回填，不走掩码。
+        VolcengineArkAccessKeyId = _credentialStore.TryRead(VolcengineArkAccessKeyIdKeyName) ?? string.Empty;
         RefreshLoginStatus();
     }
 
@@ -524,8 +593,12 @@ public sealed partial class SettingsViewModel : ObservableObject
         IsMiniMaxConfigured = !string.IsNullOrEmpty(_credentialStore.TryRead(MiniMaxKeyName));
         IsDeepSeekConfigured = !string.IsNullOrEmpty(_credentialStore.TryRead(DeepSeekKeyName));
         IsTokenPlanConfigured = !string.IsNullOrEmpty(_credentialStore.TryReadLarge(TokenPlanCookieKeyName));
+        // 两者都齐全才算"已配置"——Provider 缺任何一个都不会发起查询。
+        IsVolcengineArkConfigured = !string.IsNullOrEmpty(_credentialStore.TryRead(VolcengineArkAccessKeyIdKeyName)) &&
+                                     !string.IsNullOrEmpty(_credentialStore.TryRead(VolcengineArkSecretAccessKeyKeyName));
         MiniMaxConfiguredText = IsMiniMaxConfigured ? "已配置" : "未配置";
         DeepSeekConfiguredText = IsDeepSeekConfigured ? "已配置" : "未配置";
+        VolcengineArkConfiguredText = IsVolcengineArkConfigured ? "已配置" : "未配置";
     }
 
     private async Task ToggleRevealMiniMaxKeyAsync()
@@ -576,6 +649,133 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         IsDeepSeekKeyRevealed = false;
         DeepSeekKeyDisplayText = KeyMask;
+    }
+
+    private async Task ToggleRevealVolcengineArkSecretAsync()
+    {
+        if (IsVolcengineArkSecretKeyRevealed)
+        {
+            HideVolcengineArkSecret();
+            return;
+        }
+
+        var result = await _verifyIdentity("验证身份以查看火山方舟 Secret Access Key 明文");
+        if (result != IdentityVerificationResult.Verified)
+        {
+            StatusMessage = result == IdentityVerificationResult.Cancelled ? "已取消验证" : "验证失败，无法显示明文";
+            return;
+        }
+
+        VolcengineArkSecretKeyDisplayText = _credentialStore.TryRead(VolcengineArkSecretAccessKeyKeyName) ?? string.Empty;
+        IsVolcengineArkSecretKeyRevealed = true;
+    }
+
+    private void HideVolcengineArkSecret()
+    {
+        IsVolcengineArkSecretKeyRevealed = false;
+        VolcengineArkSecretKeyDisplayText = IsVolcengineArkConfigured ? KeyMask : string.Empty;
+    }
+
+    private void SaveVolcengineArk()
+    {
+        var accessKeyId = VolcengineArkAccessKeyId?.Trim();
+        if (string.IsNullOrEmpty(accessKeyId))
+        {
+            StatusMessage = "请输入火山方舟 Access Key ID";
+            return;
+        }
+
+        // 掩码状态下 Secret 输入框只读，不会产生新值；只有已展开/首次配置时才可能有新值要保存。
+        string? secretValue = null;
+        if (!VolcengineArkSecretKeyIsReadOnly)
+        {
+            secretValue = VolcengineArkSecretKeyDisplayText?.Trim();
+        }
+
+        if (string.IsNullOrEmpty(secretValue) && !IsVolcengineArkConfigured)
+        {
+            StatusMessage = "请输入火山方舟 Secret Access Key";
+            return;
+        }
+
+        _credentialStore.Save(VolcengineArkAccessKeyIdKeyName, accessKeyId);
+        if (!string.IsNullOrEmpty(secretValue))
+        {
+            _credentialStore.Save(VolcengineArkSecretAccessKeyKeyName, secretValue);
+        }
+
+        IsVolcengineArkSecretKeyRevealed = false;
+        RefreshCredentialLabels();
+        VolcengineArkSecretKeyDisplayText = IsVolcengineArkConfigured ? KeyMask : string.Empty;
+        VolcengineArkTestResultText = string.Empty;
+        StatusMessage = "火山方舟凭据已保存";
+    }
+
+    private void ClearVolcengineArk()
+    {
+        _credentialStore.Delete(VolcengineArkAccessKeyIdKeyName);
+        _credentialStore.Delete(VolcengineArkSecretAccessKeyKeyName);
+        VolcengineArkAccessKeyId = string.Empty;
+        VolcengineArkSecretKeyDisplayText = string.Empty;
+        IsVolcengineArkSecretKeyRevealed = false;
+        VolcengineArkTestResultText = string.Empty;
+        RefreshCredentialLabels();
+        StatusMessage = "已清除火山方舟凭据";
+    }
+
+    /// <summary>
+    /// 用设置页当前编辑态（未保存也可以测）直接发一次真实查询，验证 AK/SK/Region 是否有效。
+    /// 不经过 RefreshCoordinator——这是一次性的、与主面板刷新周期无关的即时探测。
+    /// </summary>
+    private async Task TestVolcengineArkConnectionAsync()
+    {
+        if (IsVolcengineArkTestingConnection)
+        {
+            return;
+        }
+
+        var accessKeyId = VolcengineArkAccessKeyId?.Trim();
+        var secretAccessKey = VolcengineArkSecretKeyIsReadOnly
+            ? _credentialStore.TryRead(VolcengineArkSecretAccessKeyKeyName)
+            : VolcengineArkSecretKeyDisplayText?.Trim();
+
+        if (string.IsNullOrEmpty(accessKeyId) || string.IsNullOrEmpty(secretAccessKey))
+        {
+            VolcengineArkTestResultText = "请先填写 Access Key ID 与 Secret Access Key";
+            return;
+        }
+
+        if (_httpClient is null)
+        {
+            VolcengineArkTestResultText = "当前环境不支持测试连接";
+            return;
+        }
+
+        IsVolcengineArkTestingConnection = true;
+        VolcengineArkTestResultText = "正在测试连接…";
+        try
+        {
+            var region = string.IsNullOrWhiteSpace(VolcengineArkRegion) ? null : VolcengineArkRegion.Trim();
+            var displayNameOverride = string.IsNullOrWhiteSpace(VolcengineArkPlanDisplayNameOverride)
+                ? null
+                : VolcengineArkPlanDisplayNameOverride.Trim();
+            var provider = new VolcengineArkProvider(_httpClient, () => accessKeyId, () => secretAccessKey, region, displayNameOverride);
+            var snapshot = await provider.GetSnapshotAsync();
+
+            VolcengineArkTestResultText = snapshot.ErrorCategory == ErrorCategory.None
+                ? $"✓ 已连接 / {snapshot.DisplayName} / 最后检查：{DateTime.Now:HH:mm}"
+                : $"✗ {snapshot.UserGuidance ?? "连接失败"}";
+        }
+        catch (Exception ex)
+        {
+            // 理论上 GetSnapshotAsync 自身不抛（所有失败都转换成 ProviderSnapshot），这里兜底
+            // 防止界面上出现未处理异常，同时不把异常消息（可能含内部细节）直接展示给用户。
+            VolcengineArkTestResultText = $"✗ 测试连接失败：{ex.GetType().Name}";
+        }
+        finally
+        {
+            IsVolcengineArkTestingConnection = false;
+        }
     }
 
     /// <summary>
@@ -671,6 +871,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         HideMiniMaxKey();
         HideDeepSeekKey();
+        HideVolcengineArkSecret();
         foreach (var row in CustomPlatformRows)
         {
             row.HideKey();
@@ -830,6 +1031,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         yield return (DeepSeekKeyName, false, false);
         yield return (TokenPlanCookieKeyName, true, false);
         yield return (TokenPlanSecTokenKeyName, false, true);
+        yield return (VolcengineArkAccessKeyIdKeyName, false, false);
+        yield return (VolcengineArkSecretAccessKeyKeyName, false, false);
 
         foreach (var row in CustomPlatformRows)
         {
@@ -1093,6 +1296,8 @@ public sealed partial class SettingsViewModel : ObservableObject
             CodexEndpointOverride = CodexEndpointOverride,
             MiniMaxEndpointOverride = MiniMaxEndpointOverride,
             DeepSeekEndpointOverride = DeepSeekEndpointOverride,
+            VolcengineArkRegion = VolcengineArkRegion,
+            VolcengineArkPlanDisplayNameOverride = VolcengineArkPlanDisplayNameOverride,
             HotkeyEnabled = HotkeyEnabled,
             HotkeyModifiers = HotkeyModifiers,
             HotkeyKey = HotkeyKey,

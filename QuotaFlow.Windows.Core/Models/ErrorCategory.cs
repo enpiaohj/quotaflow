@@ -37,4 +37,7 @@ public enum ErrorCategory
 
     /// <summary>其他未归类的错误。</summary>
     Unknown,
+
+    /// <summary>凭据有效，但该账号未检测到任何已知套餐（如火山方舟 Coding Plan / Agent Plan 均未订阅）。</summary>
+    NoPlan,
 }

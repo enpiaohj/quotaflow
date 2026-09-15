@@ -123,6 +123,20 @@ public sealed class AppSettings
     public string? DeepSeekEndpointOverride { get; set; }
 
     /// <summary>
+    /// 火山方舟控制面 OpenAPI 的 Region；空/未填时回落到 <c>VolcengineSigner.DefaultRegion</c>
+    /// （cn-beijing）。与其它平台的 EndpointOverride 不同——这里不能让用户覆盖 Host（域名固定，
+    /// 覆盖错了会导致签名彻底失败且报错信息无法定位），只放开影响签名 Credential Scope 的 Region。
+    /// </summary>
+    public string? VolcengineArkRegion { get; set; }
+
+    /// <summary>
+    /// 火山方舟套餐显示名称的用户自定义覆盖。官方接口不返回套餐类型（Lite/Pro），无法自动识别，
+    /// 默认展示"Coding Plan"；用户确认自己的套餐类型后可以在这里手动填一个更准确的名称
+    /// （如"Coding Plan Pro"），纯展示用途，不影响任何解析逻辑。
+    /// </summary>
+    public string? VolcengineArkPlanDisplayNameOverride { get; set; }
+
+    /// <summary>
     /// 面板平台的展示顺序（ProviderId 列表，从上到下）。空/未填时使用内置默认顺序
     /// （Claude → Codex → MiniMax → DeepSeek）；配置里未出现的平台按默认顺序排在末尾。
     /// </summary>
