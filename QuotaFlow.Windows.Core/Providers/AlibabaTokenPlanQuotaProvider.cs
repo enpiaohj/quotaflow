@@ -130,7 +130,9 @@ public sealed class AlibabaTokenPlanQuotaProvider : IQuotaProvider
         }
 
         TraceLog($"Weekly usage: {usage.UsedPercent:F2}%");
-        TraceLog($"Reset at: {usage.ResetsAt:yyyy-MM-dd HH:mm}");
+        TraceLog(usage.ResetsAt is { } resetAt
+            ? $"Reset at: {resetAt:yyyy-MM-dd HH:mm}"
+            : "Reset time: not provided by API");
 
         var remaining = 100.0 - usage.UsedPercent;
         var state = usage.UsedPercent switch
@@ -376,15 +378,13 @@ public sealed class AlibabaTokenPlanQuotaProvider : IQuotaProvider
                     MissingFieldGuidance(FieldPercentage, raw)));
             }
 
+            // per1WeekResetTime 实测可能缺失（接口只回比例、不回重置时间）。重置时间是
+            // 增强信息，缺失时不能把整个查询判定失败——已经拿到的比例是有效数据，照常展示，
+            // 重置时间缺省为 null（UI 不显示重置倒计时），绝不臆造一个时间。
             var resetMs = FindNumeric(root, FieldResetTime, 0);
-            if (!resetMs.HasValue)
-            {
-                return UsageResult.FromError(MakeSnapshot(ProviderState.ProviderError, ErrorCategory.ResponseFormat,
-                    MissingFieldGuidance(FieldResetTime, raw)));
-            }
+            var resetsAt = resetMs.HasValue ? FromUnixMilliseconds(resetMs.Value) : (DateTimeOffset?)null;
 
             var usedPercent = Math.Clamp(percentage.Value * 100.0, 0.0, 100.0);
-            var resetsAt = FromUnixMilliseconds(resetMs.Value);
             return UsageResult.Ok(usedPercent, resetsAt);
         }
     }
@@ -632,9 +632,11 @@ public sealed class AlibabaTokenPlanQuotaProvider : IQuotaProvider
         public static SecTokenResult FromError(ProviderSnapshot error) => new(null, error);
     }
 
-    internal readonly record struct UsageResult(double UsedPercent, DateTimeOffset ResetsAt, ProviderSnapshot? Error)
+    /// <param name="ResetsAt">7 天额度重置时间；接口未返回（per1WeekResetTime 缺失）时为 null，
+    /// 此时不显示重置倒计时，但百分比照常有效。</param>
+    internal readonly record struct UsageResult(double UsedPercent, DateTimeOffset? ResetsAt, ProviderSnapshot? Error)
     {
-        public static UsageResult Ok(double usedPercent, DateTimeOffset resetsAt) => new(usedPercent, resetsAt, null);
-        public static UsageResult FromError(ProviderSnapshot error) => new(0, default, error);
+        public static UsageResult Ok(double usedPercent, DateTimeOffset? resetsAt) => new(usedPercent, resetsAt, null);
+        public static UsageResult FromError(ProviderSnapshot error) => new(0, null, error);
     }
 }

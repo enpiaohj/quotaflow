@@ -80,6 +80,41 @@ public class AlibabaTokenPlanQuotaProviderTests
     }
 
     /// <summary>
+    /// 实测回归：接口近期只回 <c>per1WeekPercentage</c>、不回 <c>per1WeekResetTime</c>。
+    /// 重置时间缺失不应把整个查询判失败——百分比是有效数据，照常展示，重置时间缺省为 null。
+    /// </summary>
+    [Fact]
+    public void ParseUsageResponse_MissingResetTime_PercentageStillParsedWithNullResetsAt()
+    {
+        var json = """
+            {
+              "code": "200",
+              "data": {
+                "DataV2": {
+                  "ret": ["SUCCESS::接口调用成功"],
+                  "data": {
+                    "msg": "Success.",
+                    "code": "SUCCESS",
+                    "data": {
+                      "per1WeekPercentage": 0.4696
+                    },
+                    "success": true
+                  }
+                }
+              },
+              "httpStatusCode": "200",
+              "successResponse": true
+            }
+            """;
+
+        var usage = CreateProvider().ParseUsageResponse(json);
+
+        Assert.Null(usage.Error);
+        Assert.Equal(46.96, usage.UsedPercent, precision: 2);
+        Assert.Null(usage.ResetsAt); // 不臆造重置时间
+    }
+
+    /// <summary>
     /// 网关在参数不全时会返回 HTTP 200 + 内层 <c>success:false</c>（实测缺 cornerstoneParam
     /// 就是这个形态）。这种"看起来成功、实则失败"的响应必须被识别成错误，绝不能落到额度显示上。
     /// </summary>
@@ -228,17 +263,19 @@ public class AlibabaTokenPlanQuotaProviderTests
     }
 
     [Fact]
-    public void ParseUsageResponse_MissingResetTimeField_ReturnsResponseFormatError()
+    public void ParseUsageResponse_MissingResetTimeField_PercentageStillParsedWithNullResetsAt()
     {
+        // 既往契约把缺 per1WeekResetTime 当成整个查询失败——但实测接口近期只回比例、不回
+        // 重置时间，百分比是有效数据，缺失重置时间不该让整张卡变红。改为可空后照常解析。
         var json = """
             { "result": { "per1WeekPercentage": 0.5 } }
             """;
 
         var usage = CreateProvider().ParseUsageResponse(json);
 
-        Assert.NotNull(usage.Error);
-        Assert.Equal(ErrorCategory.ResponseFormat, usage.Error!.ErrorCategory);
-        Assert.Contains("per1WeekResetTime", usage.Error.UserGuidance);
+        Assert.Null(usage.Error);
+        Assert.Equal(50.0, usage.UsedPercent);
+        Assert.Null(usage.ResetsAt);
     }
 
     [Fact]
