@@ -11,7 +11,7 @@ namespace QuotaFlow.Windows.Core.Providers;
 public static class HttpErrorClassifier
 {
     /// <summary>
-    /// 返回当前实际使用的代理描述（如 <c>192.168.10.101:8889</c>），直连时返回 null。
+    /// 返回当前实际使用的代理描述（如 <c>192.0.2.10:8889</c>），直连时返回 null。
     /// 由组合根在启动时注入一次。
     ///
     /// 为什么要有它：代理配错时，"网络请求失败，请检查网络连接"这句话会把人引向完全错误的

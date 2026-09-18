@@ -1125,7 +1125,7 @@
                                    Foreground="{DynamicResource Brush.TextPrimary}" />
                     </Grid>
 
-                    <TextBlock Text='本应用按 GPL-3.0 许可证发布；随源码分发的第三方组件清单与致谢见项目 README 的"致谢与许可证引用"一节（cc-switch 为 MIT，火山方舟签名参考的实现为 MIT）。'
+                    <TextBlock Text='本应用按 GPL-3.0 许可证发布；本应用未内嵌任何第三方代码，所参考的开源实现及其许可证致谢见项目 README 的"致谢与许可证引用"一节。'
                                Style="{StaticResource StatusLabel}" TextWrapping="Wrap" Margin="0,14,0,0" />
                 </StackPanel>
             </Border>

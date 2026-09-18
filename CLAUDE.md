@@ -9,7 +9,7 @@
 | 项 | 值 |
 | --- | --- |
 | 产品名称 | QuotaFlow |
-| 仓库 | `enpiaohj/quotaflow`（Private） |
+| 仓库 | `enpiaohj/quotaflow`（Public，2026-09-18 转 Public；转公开前已完成 Secret / 客户数据 / 第三方授权全历史检查） |
 | 定位 | Windows 11 系统托盘 AI 额度监控，正式独立产品 |
 | 本地路径 | `D:\AIProjects\QuotaFlow` |
 | 默认分支 | `main` |
