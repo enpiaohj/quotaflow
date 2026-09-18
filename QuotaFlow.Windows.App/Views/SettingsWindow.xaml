@@ -1106,7 +1106,7 @@
                         <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="开发者" Margin="0,10,0,0" />
                         <TextBlock Grid.Row="1" Grid.Column="1" FontSize="12" VerticalAlignment="Center" Margin="0,10,0,0"
                                    Foreground="{DynamicResource Brush.TextPrimary}">
-                            <Hyperlink Command="{Binding OpenUrlCommand}" CommandParameter="{Binding DeveloperHomepageUrl}">
+                            <Hyperlink Command="{Binding OpenUrlCommand}" CommandParameter="https://github.com/enpiaohj">
                                 enpiaohj (GitHub)
                             </Hyperlink>
                         </TextBlock>
@@ -1114,8 +1114,8 @@
                         <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="源码仓库" Margin="0,10,0,0" />
                         <TextBlock Grid.Row="2" Grid.Column="1" FontSize="12" VerticalAlignment="Center" Margin="0,10,0,0"
                                    Foreground="{DynamicResource Brush.TextPrimary}">
-                            <Hyperlink Command="{Binding OpenUrlCommand}" CommandParameter="{Binding SourceRepoUrl}">
-                                <Run Text="{Binding SourceRepoUrl}" />
+                            <Hyperlink Command="{Binding OpenUrlCommand}" CommandParameter="https://github.com/enpiaohj/quotaflow">
+                                <Run Text="https://github.com/enpiaohj/quotaflow" />
                             </Hyperlink>
                         </TextBlock>
 
