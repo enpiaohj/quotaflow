@@ -452,12 +452,6 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// <summary>关于页的产品许可证标识（仓库根目录有对应的 LICENSE 文件）。</summary>
     public string AppLicenseText => "GPL-3.0";
 
-    /// <summary>源码仓库地址（可点击，经 <see cref="OpenUrlCommand"/> 打开）。</summary>
-    public string SourceRepoUrl => "https://github.com/enpiaohj/quotaflow";
-
-    /// <summary>开发者主页（可点击，经 <see cref="OpenUrlCommand"/> 打开）。</summary>
-    public string DeveloperHomepageUrl => "https://github.com/enpiaohj";
-
     /// <summary>
     /// 关于页"隐私与数据"说明。如实描述本应用的真实网络行为，不臆造：
     /// 唯一的对外 HTTP 请求是向各 AI 平台的官方额度/余额接口查询数据，不采集遥测 / 崩溃 /
