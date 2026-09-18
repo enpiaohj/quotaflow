@@ -441,9 +441,33 @@ public sealed partial class SettingsViewModel : ObservableObject
         get
         {
             var version = typeof(SettingsViewModel).Assembly.GetName().Version;
-            return $"QuotaFlow for Windows · v{(version is null ? "unknown" : version.ToString(3))}";
+            return $"v{(version is null ? "unknown" : version.ToString(3))}";
         }
     }
+
+    /// <summary>关于页的产品定位文案。</summary>
+    public string AppTaglineText =>
+        "Windows 11 系统托盘 AI 额度监控：一眼看清多个 AI 平台还剩多少额度、何时重置、数据是否新鲜。";
+
+    /// <summary>关于页的产品许可证标识（仓库根目录有对应的 LICENSE 文件）。</summary>
+    public string AppLicenseText => "GPL-3.0";
+
+    /// <summary>源码仓库地址（可点击，经 <see cref="OpenUrlCommand"/> 打开）。</summary>
+    public string SourceRepoUrl => "https://github.com/enpiaohj/quotaflow";
+
+    /// <summary>开发者主页（可点击，经 <see cref="OpenUrlCommand"/> 打开）。</summary>
+    public string DeveloperHomepageUrl => "https://github.com/enpiaohj";
+
+    /// <summary>
+    /// 关于页"隐私与数据"说明。如实描述本应用的真实网络行为，不臆造：
+    /// 唯一的对外 HTTP 请求是向各 AI 平台的官方额度/余额接口查询数据，不采集遥测 / 崩溃 /
+    /// 使用统计，不向 Anthropic / OpenAI 等平台本身以外的任何第三方匿名上报。
+    /// </summary>
+    public string PrivacyStatementText =>
+        "QuotaFlow 不收集遥测、崩溃报告或使用统计，不会向 Anthropic、Microsoft 或任何第三方发送使用数据。" +
+        "唯一的对外请求是向各 AI 平台官方额度/余额接口查询数据（Claude、Codex、MiniMax、DeepSeek、阿里云百炼、火山方舟，以及您手动添加的自定义平台）；" +
+        "若配置了网络代理则经该代理转发。" +
+        "密钥只存 Windows 凭据管理器，配置以 DPAPI 加密落盘，本地缓存仅含展示用的百分比/重置时间，均不落日志、不随请求上传。";
 
     /// <summary>保存后通知外部（MainPanelViewModel / ThemeManager）应用新设置。</summary>
     public event EventHandler<AppSettings>? SettingsSaved;
@@ -467,6 +491,9 @@ public sealed partial class SettingsViewModel : ObservableObject
     public IRelayCommand ClearVolcengineArkCommand { get; }
     public IAsyncRelayCommand ToggleRevealVolcengineArkSecretCommand { get; }
     public IAsyncRelayCommand TestVolcengineArkConnectionCommand { get; }
+
+    /// <summary>打开外部链接（源码仓库 / 开发者主页）：用默认浏览器，参数是要打开的 URL。</summary>
+    public IRelayCommand<string> OpenUrlCommand { get; }
 
     private readonly HttpClient? _httpClient;
 
@@ -550,6 +577,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         ClearVolcengineArkCommand = new RelayCommand(ClearVolcengineArk);
         ToggleRevealVolcengineArkSecretCommand = new AsyncRelayCommand(ToggleRevealVolcengineArkSecretAsync);
         TestVolcengineArkConnectionCommand = new AsyncRelayCommand(TestVolcengineArkConnectionAsync);
+        OpenUrlCommand = new RelayCommand<string>(OpenUrl);
         AddCustomPlatformCommand = new RelayCommand(AddCustomPlatform);
         AddOpenCodeGoTemplateCommand = new RelayCommand(AddOpenCodeGoTemplate);
         EnterTrayModeCommand = new AsyncRelayCommand(_presentation.EnterTrayPopupAsync);
@@ -1214,6 +1242,28 @@ public sealed partial class SettingsViewModel : ObservableObject
         catch (Exception ex)
         {
             StatusMessage = $"打开配置目录失败：{ex.GetType().Name}，可手动访问上方路径";
+        }
+    }
+
+    /// <summary>打开外部链接（关于页的源码仓库 / 开发者主页 / 许可证）。URL 是固定常量，
+    /// 不是用户输入，直接交给默认浏览器。</summary>
+    private void OpenUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return;
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url)
+            {
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"打开链接失败：{ex.GetType().Name}";
         }
     }
 

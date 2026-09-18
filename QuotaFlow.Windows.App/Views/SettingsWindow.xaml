@@ -1079,14 +1079,62 @@
         <TabItem Header="关于">
         <ScrollViewer Padding="24,20" VerticalScrollBarVisibility="Auto">
         <StackPanel>
-            <TextBlock Text="关于" Style="{StaticResource PageTitle}" />
+            <TextBlock Text="关于 QuotaFlow · Windows 系统托盘 AI 额度监控" Style="{StaticResource PageTitle}" TextWrapping="Wrap" />
 
             <Border Style="{StaticResource Style.Card}" Margin="0,0,0,14">
                 <StackPanel>
-                    <TextBlock FontSize="12" Foreground="{DynamicResource Brush.TextPrimary}"
-                               Text="{Binding AppVersionText}" Margin="0,0,0,4" />
-                    <TextBlock Style="{StaticResource StatusLabel}" TextWrapping="Wrap"
-                               Text="Claude/Codex/MiniMax 额度查询的接口路径参考了 cc-switch（MIT License，https://github.com/farion1231/cc-switch）并结合本机实测确认。详见项目 README 的“已知风险与致谢”一节。" />
+                    <TextBlock Text="{Binding AppTaglineText}" Style="{StaticResource StatusLabel}"
+                               TextWrapping="Wrap" Margin="0,0,0,14" />
+
+                    <!-- 元信息：左列标签 / 右列值，仿 CloudFlow About 的紧凑清单式布局 -->
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="84" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition />
+                            <RowDefinition />
+                            <RowDefinition />
+                            <RowDefinition />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="版本" />
+                        <TextBlock Grid.Row="0" Grid.Column="1" FontSize="12" Text="{Binding AppVersionText}"
+                                   VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextPrimary}" />
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="开发者" Margin="0,10,0,0" />
+                        <TextBlock Grid.Row="1" Grid.Column="1" FontSize="12" VerticalAlignment="Center" Margin="0,10,0,0"
+                                   Foreground="{DynamicResource Brush.TextPrimary}">
+                            <Hyperlink Command="{Binding OpenUrlCommand}" CommandParameter="{Binding DeveloperHomepageUrl}">
+                                enpiaohj (GitHub)
+                            </Hyperlink>
+                        </TextBlock>
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="源码仓库" Margin="0,10,0,0" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" FontSize="12" VerticalAlignment="Center" Margin="0,10,0,0"
+                                   Foreground="{DynamicResource Brush.TextPrimary}">
+                            <Hyperlink Command="{Binding OpenUrlCommand}" CommandParameter="{Binding SourceRepoUrl}">
+                                <Run Text="{Binding SourceRepoUrl}" />
+                            </Hyperlink>
+                        </TextBlock>
+
+                        <TextBlock Grid.Row="3" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="许可证" Margin="0,10,0,0" />
+                        <TextBlock Grid.Row="3" Grid.Column="1" FontSize="12" Text="{Binding AppLicenseText}"
+                                   VerticalAlignment="Center" Margin="0,10,0,0"
+                                   Foreground="{DynamicResource Brush.TextPrimary}" />
+                    </Grid>
+
+                    <TextBlock Text='本应用按 GPL-3.0 许可证发布；随源码分发的第三方组件清单与致谢见项目 README 的"致谢与许可证引用"一节（cc-switch 为 MIT，火山方舟签名参考的实现为 MIT）。'
+                               Style="{StaticResource StatusLabel}" TextWrapping="Wrap" Margin="0,14,0,0" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource Style.Card}">
+                <StackPanel>
+                    <TextBlock Text="隐私与数据" Style="{StaticResource SectionTitle}" Margin="0,0,0,10" />
+                    <TextBlock Text="{Binding PrivacyStatementText}" Style="{StaticResource StatusLabel}"
+                               TextWrapping="Wrap" />
                 </StackPanel>
             </Border>
         </StackPanel>
