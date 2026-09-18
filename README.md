@@ -18,7 +18,7 @@
 
 ## 当前版本
 
-`v0.12.0` — 版本号定义于 `QuotaFlow.Windows.App/QuotaFlow.Windows.App.csproj` 的 `<Version>`。
+`v0.12.1` — 版本号定义于 `QuotaFlow.Windows.App/QuotaFlow.Windows.App.csproj` 的 `<Version>`。
 
 仍处于 `0.x`：走向 1.0 的条件见 `docs/2026-09-01-QuotaFlow后续优化计划-v1.0.md`。
 
